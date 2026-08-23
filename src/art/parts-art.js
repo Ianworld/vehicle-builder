@@ -55,6 +55,27 @@ function wheel(size, { lugCount, spokeCount }) {
   ];
 }
 
+/**
+ * One exhaust plume frame. Drawn pointing +X with the attachment edge at x=0,
+ * vertically centred, so the renderer can pin it to a nozzle and rotate it to
+ * whatever direction that thruster actually pushes.
+ */
+function plume(len, wob, h = 26) {
+  const mid = h / 2;
+  return [
+    ['poly', [[0, mid - 10], [len, mid + wob], [0, mid + 10]], 8],
+    ['poly', [[0, mid - 7], [len * 0.72, mid - wob * 0.6], [0, mid + 7]], 9],
+    ['poly', [[0, mid - 3.8], [len * 0.40, mid + wob * 0.4], [0, mid + 3.8]], 10],
+    // A detached spark or two keeps it from reading as a solid cone.
+    ['circle', len * 0.86, mid - 6 + wob, 1.8, 9],
+    ['circle', len * 0.70, mid + 6.5 - wob, 1.4, 10],
+  ];
+}
+
+// Plumes attach flush against a nozzle, so the canvas edge must NOT be inked --
+// otherwise a black bar sits between the part and its own flame.
+const PLUME_STYLE = { edgeOutline: false };
+
 /** Forward-pointing chevron, used on the boost parts. */
 function chevron(x, y, w, h, t, color) {
   return ['poly', [
@@ -189,6 +210,12 @@ export const SPRITES = {
     ['rrect', 6, 2, 20, 20, 5, 12],
     ['poly', [[16, 4], [24, 13], [19.5, 13], [19.5, 19], [12.5, 19], [12.5, 13], [8, 13]], 13],
   ]},
+
+  // -- exhaust plumes (not placeable parts; drawn by the renderer) ----------
+  flame_a: { w: 46, h: 26, ops: plume(34, -1.8), style: PLUME_STYLE },
+  flame_b: { w: 46, h: 26, ops: plume(44, 0),    style: PLUME_STYLE },
+  flame_c: { w: 46, h: 26, ops: plume(28, 1.8),  style: PLUME_STYLE },
+  flame_d: { w: 46, h: 26, ops: plume(39, 1.0),  style: PLUME_STYLE },
 
   grip_surge: { w: 32, h: 32, ops: [
     ['rrect', 2, 3, 28, 17, 4, 11],

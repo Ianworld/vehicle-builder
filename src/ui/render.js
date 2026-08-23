@@ -102,13 +102,59 @@ function blit(ctx, sprite, p, wx, wy, angle, wMeters, hMeters) {
   ctx.restore();
 }
 
+const PLUMES = ['flame_a', 'flame_b', 'flame_c', 'flame_d'];
+
+/**
+ * Pin an exhaust plume to a nozzle and point it along the exhaust direction.
+ * The sprite is authored pointing +X with its attachment edge at x=0, so the
+ * origin lands exactly on the nozzle and the flame grows away from the part.
+ */
+function drawPlume(ctx, p, racer, mount, scale, seed) {
+  if (scale <= 0.01) return;
+  const body = racer.chassis;
+  const at = body.getWorldPoint(mount.nozzle);
+  const dir = body.getWorldVector(mount.exhaust);
+
+  // Flicker: a per-thruster seed stops every nozzle pulsing in lockstep.
+  const frame = PLUMES[(((performance.now() / 55) | 0) + seed) % PLUMES.length];
+  const img = spriteCanvas(frame, 0, 1);
+  const w = (img.width / PX_PER_M) * p.s * scale;
+  const h = (img.height / PX_PER_M) * p.s * scale;
+
+  ctx.save();
+  ctx.translate(p.sx(at.x), p.sy(at.y));
+  ctx.rotate(-Math.atan2(dir.y, dir.x));   // canvas y is down, planck y is up
+  ctx.drawImage(img, 0, -h / 2, w, h);
+  ctx.restore();
+}
+
+/** Plumes are drawn behind the vehicle so they never cover the part itself. */
+function drawThrust(ctx, p, racer) {
+  const boosting = racer.boostFor > 0;
+
+  racer.thrusters.forEach((t, i) => {
+    // A jet burns whenever it is pushing, and harder under boost.
+    const scale = (racer.throttle > 0 ? 0.8 : 0) * (boosting ? 1.5 : 1);
+    drawPlume(ctx, p, racer, t, scale, i);
+  });
+
+  racer.specials.forEach((s, i) => {
+    if (s.kind !== 'boost' || !boosting) return;
+    // Taper off over the last third of the burn rather than snapping to zero.
+    const left = Math.min(1, racer.boostFor / (s.duration * 0.34));
+    drawPlume(ctx, p, racer, s, 1.1 + 0.4 * left, i + 2);
+  });
+}
+
 export function drawRacer(ctx, p, racer) {
   const body = racer.chassis;
   const pos = body.getPosition();
   const ang = body.getAngle();
   const cos = Math.cos(ang), sin = Math.sin(ang);
 
-  // Wheels first so the hull overlaps them.
+  drawThrust(ctx, p, racer);
+
+  // Wheels next so the hull overlaps them.
   for (const wr of racer.wheelRender) {
     const wp = wr.body.getPosition();
     blit(ctx, wr, p, wp.x, wp.y, wr.body.getAngle(), wr.w, wr.h);

@@ -140,18 +140,22 @@ export function buildVehicle(planck, world, vehicle, spawn = { x: 0, y: 0 }) {
     structuralFixtures++;
 
     if (part.thrust) {
-      thrusters.push({
-        part,
-        point: new Vec2(lx(p.x + w / 2), ly(p.y + h / 2)),
-        // r=0 points right; each sprite turn is 90 deg clockwise on screen.
-        dir: [new Vec2(1, 0), new Vec2(0, -1), new Vec2(-1, 0), new Vec2(0, 1)][rot],
-      });
+      // r=0 points right; each sprite turn is 90 deg clockwise on screen.
+      const dir = [new Vec2(1, 0), new Vec2(0, -1), new Vec2(-1, 0), new Vec2(0, 1)][rot];
+      const centre = new Vec2(lx(p.x + w / 2), ly(p.y + h / 2));
+      thrusters.push({ part, point: centre, dir, ...nozzleOf(planck, centre, dir, w, h) });
     }
     if (part.wing) {
       wings.push({ part, point: new Vec2(lx(p.x + w / 2), ly(p.y + h / 2)) });
     }
     if (part.special) {
-      specials.push({ part, ...part.special, cooldownLeft: 0, activeFor: 0 });
+      // Boosters are not rotatable, so they always push +x.
+      const centre = new Vec2(lx(p.x + w / 2), ly(p.y + h / 2));
+      const dir = new Vec2(1, 0);
+      specials.push({
+        part, ...part.special, cooldownLeft: 0, activeFor: 0,
+        point: centre, dir, ...nozzleOf(planck, centre, dir, w, h),
+      });
     }
   }
 
@@ -167,6 +171,20 @@ export function buildVehicle(planck, world, vehicle, spawn = { x: 0, y: 0 }) {
   chassis.resetMassData();
 
   return { chassis, wheels, thrusters, wings, specials, hullRender, wheelRender, bounds: b };
+}
+
+/**
+ * Where a thruster's exhaust leaves the part, and which way it goes: the
+ * trailing edge of the footprint, opposite the direction of thrust.
+ */
+function nozzleOf(planck, centre, dir, w, h) {
+  const { Vec2 } = planck;
+  const exhaust = new Vec2(-dir.x, -dir.y);
+  const halfSpan = (Math.abs(dir.x) ? w : h) * M / 2;
+  return {
+    exhaust,
+    nozzle: new Vec2(centre.x + exhaust.x * halfSpan, centre.y + exhaust.y * halfSpan),
+  };
 }
 
 function makeWheel(planck, world, chassis, part, spawn, localX, localY, kg) {
