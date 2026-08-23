@@ -4,7 +4,11 @@
 // reason to do it lazily or per frame. Rotations are exact 90-degree spins of
 // the index grid, so a rotated jet is pixel-identical to the original.
 
-import { SPRITES, ROTATABLE } from './parts-art.js';
+import { SPRITES } from './parts-art.js';
+import { PARTS } from '../game/parts.js';
+
+/** Art keys needing rotated variants, taken straight from the part catalog. */
+export const ROTATABLE = PARTS.filter((p) => p.rotatable).map((p) => p.art);
 import { makeGrid, drawOps, stylePass, gridToCanvas, rotateGrid } from './raster.js';
 
 const grids = new Map();     // "name" | "name@turns"  -> {w, h, grid}
@@ -77,4 +81,4 @@ export function spriteNames() {
   return Object.keys(SPRITES);
 }
 
-export { SPRITES, ROTATABLE };
+export { SPRITES };

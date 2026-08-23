@@ -112,6 +112,16 @@ track, spawn upside-down, slow-mo). It exposes `__step(seconds)` and
 `__reset(vehicle, track, upsideDown)` for headless verification, because some
 embedded browser panes never fire `requestAnimationFrame`.
 
+### Icons
+
+`node tools/make-favicon.mjs` regenerates `favicon.ico`, `favicon-32.png`,
+`favicon-64.png` and `apple-touch-icon.png` from the same sprite DSL as the
+game art, so the icon cannot drift off-palette. The design is authored directly
+at 32px with deliberately fewer and higher-contrast shapes than the in-game
+sprites -- at icon size a recessed panel and a mid-grey wedge both just read as
+"dark blob". The `.ico` matters: browsers request `/favicon.ico` implicitly
+whatever the `<link>` tags say.
+
 ### Racing
 
 Two **independent worlds**, one per racer, each holding its own copy of the

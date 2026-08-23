@@ -60,17 +60,41 @@ function wheel(size, { lugCount, spokeCount }) {
  * vertically centred, so the renderer can pin it to a nozzle and rotate it to
  * whatever direction that thruster actually pushes.
  */
-function plume(len, wob, h = 26) {
+function plume(len, wob, ramp = [8, 9, 10], h = 26) {
+  const [outer, mid_, core] = ramp;
   const mid = h / 2;
   return [
-    ['poly', [[0, mid - 10], [len, mid + wob], [0, mid + 10]], 8],
-    ['poly', [[0, mid - 7], [len * 0.72, mid - wob * 0.6], [0, mid + 7]], 9],
-    ['poly', [[0, mid - 3.8], [len * 0.40, mid + wob * 0.4], [0, mid + 3.8]], 10],
+    ['poly', [[0, mid - 10], [len, mid + wob], [0, mid + 10]], outer],
+    ['poly', [[0, mid - 7], [len * 0.72, mid - wob * 0.6], [0, mid + 7]], mid_],
+    ['poly', [[0, mid - 3.8], [len * 0.40, mid + wob * 0.4], [0, mid + 3.8]], core],
     // A detached spark or two keeps it from reading as a solid cone.
-    ['circle', len * 0.86, mid - 6 + wob, 1.8, 9],
-    ['circle', len * 0.70, mid + 6.5 - wob, 1.4, 10],
+    ['circle', len * 0.86, mid - 6 + wob, 1.8, mid_],
+    ['circle', len * 0.70, mid + 6.5 - wob, 1.4, core],
   ];
 }
+
+/**
+ * Traction grit thrown out sideways at a wheel's contact patch.
+ *
+ * Deliberately un-outlined (see GRIT_STYLE): these marks are only a few pixels
+ * across, and a 1px ink border on a 3px triangle leaves nothing but the border.
+ */
+function grit(marks, w = 34, h = 16) {
+  const cx = w / 2;
+  const ops = [];
+  for (const [dx, y, len] of marks) {
+    ops.push(['poly', [
+      [cx + dx, y], [cx + dx + len * 0.55, y + len], [cx + dx - len * 0.55, y + len],
+    ], 12]);
+    ops.push(['poly', [
+      [cx + dx, y + 1], [cx + dx + len * 0.28, y + len * 0.72], [cx + dx - len * 0.28, y + len * 0.72],
+    ], 13]);
+  }
+  ops.push(['ellipse', cx, 3, 5.5, 2.6, 13]);
+  return ops;
+}
+
+const GRIT_STYLE = { outline: false, edgeOutline: false };
 
 // Plumes attach flush against a nozzle, so the canvas edge must NOT be inked --
 // otherwise a black bar sits between the part and its own flame.
@@ -217,6 +241,16 @@ export const SPRITES = {
   flame_c: { w: 46, h: 26, ops: plume(28, 1.8),  style: PLUME_STYLE },
   flame_d: { w: 46, h: 26, ops: plume(39, 1.0),  style: PLUME_STYLE },
 
+  // Hop uses the aqua ramp so it reads as the blue jump-jet, not a booster.
+  hop_a: { w: 40, h: 26, ops: plume(30, -1.4, [11, 12, 13]), style: PLUME_STYLE },
+  hop_b: { w: 40, h: 26, ops: plume(38, 0.6, [11, 12, 13]),  style: PLUME_STYLE },
+  hop_c: { w: 40, h: 26, ops: plume(24, 1.5, [11, 12, 13]),  style: PLUME_STYLE },
+
+  // Grit sprayed at the contact patch while the grip surge is active.
+  grip_a: { w: 34, h: 16, ops: grit([[-10, 2, 9], [0, 3, 12], [10, 2, 9]]), style: GRIT_STYLE },
+  grip_b: { w: 34, h: 16, ops: grit([[-12, 3, 7], [-4, 2, 11], [5, 2, 10], [12, 3, 7]]), style: GRIT_STYLE },
+  grip_c: { w: 34, h: 16, ops: grit([[-7, 2, 11], [3, 3, 8], [11, 2, 7]]), style: GRIT_STYLE },
+
   grip_surge: { w: 32, h: 32, ops: [
     ['rrect', 2, 3, 28, 17, 4, 11],
     ['rect', 6, 6, 20, 3, 12],
@@ -227,5 +261,5 @@ export const SPRITES = {
   ]},
 };
 
-/** Parts whose sprite must be re-rasterized per rotation rather than spun. */
-export const ROTATABLE = ['jet', 'wedge'];
+// Which sprites need rotated variants is derived from the part catalog in
+// atlas.js, so there is no second list to keep in sync.

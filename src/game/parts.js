@@ -56,6 +56,9 @@ export const PARTS = [
     group: 'drive', name: 'Jet', role: 'thruster', rotatable: true,
     mass: 8,
     thrust: { force: 900 },
+    // Direction the part pushes at rotation 0, in local space with Y up.
+    // Rotating the part rotates this with it.
+    pushDir: [1, 0],
   }),
 
   // -- nose / obstacle clearing ---------------------------------------------
@@ -80,18 +83,20 @@ export const PARTS = [
 
   // -- specials: everything here fires on the action button -----------------
   P('booster', {
-    group: 'special', name: 'Boost', role: 'special',
-    mass: 9,
+    group: 'special', name: 'Boost', role: 'special', rotatable: true,
+    mass: 9, pushDir: [1, 0],
     special: { kind: 'boost', impulse: 2600, duration: 0.9, cooldown: 4 },
   }),
   P('jump_jet', {
-    group: 'special', name: 'Hop', role: 'special',
-    mass: 9,
+    group: 'special', name: 'Hop', role: 'special', rotatable: true,
+    // Nozzle points down at rotation 0, so it pushes UP.
+    mass: 9, pushDir: [0, 1],
     special: { kind: 'hop', impulse: 1900, duration: 0.25, cooldown: 3 },
   }),
   P('grip_surge', {
-    group: 'special', name: 'Stick', role: 'special',
-    mass: 7,
+    group: 'special', name: 'Stick', role: 'special', rotatable: true,
+    // Traction, not thrust -- rotation is cosmetic here.
+    mass: 7, pushDir: [1, 0],
     special: { kind: 'grip', multiplier: 2.6, duration: 2.5, cooldown: 5 },
   }),
 ];

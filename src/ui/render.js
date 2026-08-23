@@ -103,20 +103,22 @@ function blit(ctx, sprite, p, wx, wy, angle, wMeters, hMeters) {
 }
 
 const PLUMES = ['flame_a', 'flame_b', 'flame_c', 'flame_d'];
+const HOP_PLUMES = ['hop_a', 'hop_b', 'hop_c'];
+const GRIT = ['grip_a', 'grip_b', 'grip_c'];
 
 /**
  * Pin an exhaust plume to a nozzle and point it along the exhaust direction.
  * The sprite is authored pointing +X with its attachment edge at x=0, so the
  * origin lands exactly on the nozzle and the flame grows away from the part.
  */
-function drawPlume(ctx, p, racer, mount, scale, seed) {
+function drawPlume(ctx, p, racer, mount, scale, seed, frames = PLUMES) {
   if (scale <= 0.01) return;
   const body = racer.chassis;
   const at = body.getWorldPoint(mount.nozzle);
   const dir = body.getWorldVector(mount.exhaust);
 
   // Flicker: a per-thruster seed stops every nozzle pulsing in lockstep.
-  const frame = PLUMES[(((performance.now() / 55) | 0) + seed) % PLUMES.length];
+  const frame = frames[(((performance.now() / 55) | 0) + seed) % frames.length];
   const img = spriteCanvas(frame, 0, 1);
   const w = (img.width / PX_PER_M) * p.s * scale;
   const h = (img.height / PX_PER_M) * p.s * scale;
@@ -139,10 +141,42 @@ function drawThrust(ctx, p, racer) {
   });
 
   racer.specials.forEach((s, i) => {
-    if (s.kind !== 'boost' || !boosting) return;
-    // Taper off over the last third of the burn rather than snapping to zero.
-    const left = Math.min(1, racer.boostFor / (s.duration * 0.34));
-    drawPlume(ctx, p, racer, s, 1.1 + 0.4 * left, i + 2);
+    if (s.kind === 'boost' && boosting) {
+      // Taper off over the last third of the burn rather than snapping to zero.
+      const left = Math.min(1, racer.boostFor / (s.duration * 0.34));
+      drawPlume(ctx, p, racer, s, 1.1 + 0.4 * left, i + 2);
+    } else if (s.kind === 'hop' && racer.hopFor > 0) {
+      // Fades as the hop spends itself, so it reads as a burst not a jet.
+      drawPlume(ctx, p, racer, s, 0.55 + 0.75 * Math.min(1, racer.hopFor / 0.45),
+        i + 5, HOP_PLUMES);
+    }
+  });
+
+  drawGrip(ctx, p, racer);
+}
+
+/**
+ * Grip surge has no exhaust -- it is a traction effect -- so it shows as grit
+ * thrown out at each wheel's contact patch rather than as a plume.
+ */
+function drawGrip(ctx, p, racer) {
+  if (racer.gripFor <= 0) return;
+  const fade = Math.min(1, racer.gripFor / 0.6);
+
+  racer.wheels.forEach((wheel, i) => {
+    const c = wheel.body.getPosition();
+    const r = wheel.part.wheel.radius * M;
+    const frame = GRIT[(((performance.now() / 70) | 0) + i) % GRIT.length];
+    const img = spriteCanvas(frame, 0, 1);
+    const w = (img.width / PX_PER_M) * p.s;
+    const h = (img.height / PX_PER_M) * p.s;
+
+    ctx.save();
+    ctx.globalAlpha = 0.55 + 0.45 * fade;
+    // Pinned at the contact patch in WORLD space, not to the wheel's rotation:
+    // grit sprays off the ground, it does not spin with the tyre.
+    ctx.drawImage(img, p.sx(c.x) - w / 2, p.sy(c.y - r) - h * 0.35, w, h);
+    ctx.restore();
   });
 }
 

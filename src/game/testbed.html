@@ -1,6 +1,9 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="../../favicon-64.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
 <title>Physics testbed</title>
 <script src="../../vendor/planck.min.js"></script>
 <style>
@@ -22,6 +25,7 @@
   <button id="slow">Slow-mo</button>
   <button id="tip">Spawn upside-down</button>
   <label><input type="checkbox" id="follow" checked> follow</label>
+  <label>zoom <input type="range" id="zoom" min="0.5" max="4" step="0.25" value="1"></label>
 </div>
 <canvas id="cv"></canvas>
 <div class="hud" id="hud"></div>
@@ -106,6 +110,10 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
+document.getElementById('zoom').oninput = (e) => {
+  cam.zoom = +e.target.value;
+  renderView({ ctx, vw: cv.clientWidth, vh: cv.clientHeight }, cam, build, [racer]);
+};
 document.getElementById('restart').onclick = reset;
 document.getElementById('veh').onchange = reset;
 document.getElementById('trk').onchange = reset;
@@ -131,6 +139,7 @@ window.__step = (seconds, opts = {}) => {
   renderView({ ctx, vw: cv.clientWidth, vh: cv.clientHeight }, cam, build, [racer]);
   return window.__t();
 };
+window.__zoom = (z) => { cam.zoom = z; document.getElementById('zoom').value = z; return z; };
 window.__reset = (v, tr, ups) => {
   if (v) document.getElementById('veh').value = v;
   if (tr) document.getElementById('trk').value = tr;

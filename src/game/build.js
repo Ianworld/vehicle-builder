@@ -29,6 +29,21 @@ const SHAPES = {
   wedge: [[0, 0.875], [0, 0], [1, 0], [1, 0.14]],
 };
 
+/**
+ * Rotate a local direction to match a part's sprite rotation.
+ * One sprite turn is 90 degrees clockwise on screen, which with Y up is
+ * (x, y) -> (y, -x). Check: a jet's (1,0) becomes (0,-1) at r=1, i.e. it fires
+ * downward, which is what the rotated sprite shows.
+ */
+function rotateDir(planck, [x, y], turns) {
+  let px = x, py = y;
+  for (let i = 0; i < ((turns % 4) + 4) % 4; i++) {
+    const nx = py, ny = -px;
+    px = nx; py = ny;
+  }
+  return new planck.Vec2(px, py);
+}
+
 function rotatePoint([x, y], turns) {
   // Sprite rotation is clockwise on screen; with Y up that is counter-clockwise
   // here. Rotate about the cell centre so the footprint stays put.
@@ -140,8 +155,7 @@ export function buildVehicle(planck, world, vehicle, spawn = { x: 0, y: 0 }) {
     structuralFixtures++;
 
     if (part.thrust) {
-      // r=0 points right; each sprite turn is 90 deg clockwise on screen.
-      const dir = [new Vec2(1, 0), new Vec2(0, -1), new Vec2(-1, 0), new Vec2(0, 1)][rot];
+      const dir = rotateDir(planck, part.pushDir || [1, 0], rot);
       const centre = new Vec2(lx(p.x + w / 2), ly(p.y + h / 2));
       thrusters.push({ part, point: centre, dir, ...nozzleOf(planck, centre, dir, w, h) });
     }
@@ -149,9 +163,10 @@ export function buildVehicle(planck, world, vehicle, spawn = { x: 0, y: 0 }) {
       wings.push({ part, point: new Vec2(lx(p.x + w / 2), ly(p.y + h / 2)) });
     }
     if (part.special) {
-      // Boosters are not rotatable, so they always push +x.
+      // Specials rotate too, so a boost can be mounted to fire in any
+      // direction and a hop can be aimed sideways.
       const centre = new Vec2(lx(p.x + w / 2), ly(p.y + h / 2));
-      const dir = new Vec2(1, 0);
+      const dir = rotateDir(planck, part.pushDir || [1, 0], rot);
       specials.push({
         part, ...part.special, cooldownLeft: 0, activeFor: 0,
         point: centre, dir, ...nozzleOf(planck, centre, dir, w, h),

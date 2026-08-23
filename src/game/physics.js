@@ -29,6 +29,7 @@ export function createRacer(planck, world, vehicle, spawn) {
     throttle: 0,
     boostFor: 0,
     gripFor: 0,
+    hopFor: 0,
     invertedFor: 0,
     stalledFor: 0,
     recoverFor: 0,
@@ -55,17 +56,20 @@ export function fireAction(racer) {
 
     if (s.kind === 'boost') {
       racer.boostFor = Math.max(racer.boostFor, s.duration);
-      racer.boostImpulse = s.impulse;
+      s.burnFor = s.duration;
     } else if (s.kind === 'hop') {
-      // One instantaneous kick, aimed slightly forward so a hop clears a lip
-      // rather than just bouncing in place.
-      const a = racer.chassis.getAngle();
-      const up = new Vec2(-Math.sin(a) * 0.25 + 0.25, Math.cos(a));
-      up.normalize();
-      racer.chassis.applyLinearImpulse(
-        new Vec2(up.x * s.impulse * 0.01 * racer.chassis.getMass(),
-                 up.y * s.impulse * 0.01 * racer.chassis.getMass()),
-        racer.chassis.getWorldCenter(), true);
+      // The hop itself is a single impulse. Hold a short visual timer so the
+      // flare is actually seen -- 0.25s of thrust is a frame or two on screen.
+      racer.hopFor = Math.max(racer.hopFor, Math.max(s.duration, 0.45));
+      // One instantaneous kick along the part's own push direction, biased a
+      // little forward so a hop clears a lip rather than bouncing in place.
+      const push = racer.chassis.getWorldVector(s.dir);
+      const fwd = racer.chassis.getWorldVector(new Vec2(1, 0));
+      const v = new Vec2(push.x + fwd.x * 0.25, push.y + fwd.y * 0.25);
+      v.normalize();
+      const k = s.impulse * 0.01 * racer.chassis.getMass();
+      racer.chassis.applyLinearImpulse(new Vec2(v.x * k, v.y * k),
+        racer.chassis.getWorldPoint(s.point), true);
     } else if (s.kind === 'grip') {
       racer.gripFor = Math.max(racer.gripFor, s.duration);
       racer.gripMultiplier = s.multiplier;
@@ -83,6 +87,7 @@ export function updateRacer(racer, dt, input = {}) {
   for (const s of racer.specials) s.cooldownLeft = Math.max(0, s.cooldownLeft - dt);
   racer.boostFor = Math.max(0, racer.boostFor - dt);
   racer.gripFor = Math.max(0, racer.gripFor - dt);
+  racer.hopFor = Math.max(0, racer.hopFor - dt);
 
   // -- drive -----------------------------------------------------------
   // Negative motor speed spins a wheel clockwise, which drives +x.
@@ -104,10 +109,14 @@ export function updateRacer(racer, dt, input = {}) {
   }
 
   // -- boost -------------------------------------------------------------
-  if (boosting && racer.boostImpulse) {
-    const fwd = chassis.getWorldVector(new Vec2(1, 0));
-    const f = racer.boostImpulse;
-    chassis.applyForce(new Vec2(fwd.x * f, fwd.y * f), chassis.getWorldCenter(), true);
+  // Applied per booster along its OWN direction and at its own mounting point,
+  // so a rotated booster pushes where it points and two of them add up.
+  for (const s of racer.specials) {
+    if (s.kind !== 'boost' || !(s.burnFor > 0)) continue;
+    s.burnFor = Math.max(0, s.burnFor - dt);
+    const d = chassis.getWorldVector(s.dir);
+    chassis.applyForce(new Vec2(d.x * s.impulse, d.y * s.impulse),
+      chassis.getWorldPoint(s.point), true);
   }
 
   // -- anti-wheelie --------------------------------------------------------
