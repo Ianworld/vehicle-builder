@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "starter_spike",
+  "name": "Spike",
+  "starter": true,
+  "parts": [
+    {
+      "t": "light_block",
+      "x": 2,
+      "y": 5,
+      "r": 0
+    },
+    {
+      "t": "light_block",
+      "x": 3,
+      "y": 5,
+      "r": 0
+    },
+    {
+      "t": "block",
+      "x": 4,
+      "y": 5,
+      "r": 0
+    },
+    {
+      "t": "light_block",
+      "x": 5,
+      "y": 5,
+      "r": 0
+    },
+    {
+      "t": "light_block",
+      "x": 6,
+      "y": 5,
+      "r": 0
+    },
+    {
+      "t": "block",
+      "x": 2,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "block",
+      "x": 3,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "block",
+      "x": 4,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "block",
+      "x": 5,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "block",
+      "x": 6,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "wheel_big",
+      "x": 2,
+      "y": 7,
+      "r": 0
+    },
+    {
+      "t": "wheel_big",
+      "x": 5,
+      "y": 7,
+      "r": 0
+    },
+    {
+      "t": "booster",
+      "x": 1,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "wing",
+      "x": 3,
+      "y": 4,
+      "r": 0
+    },
+    {
+      "t": "wedge",
+      "x": 7,
+      "y": 7,
+      "r": 0
+    }
+  ]
+}

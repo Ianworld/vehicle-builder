@@ -1,0 +1,192 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sprite sheet — vehicle builder</title>
+<style>
+  :root { --bg:#0e1118; --panel:#161b26; --line:#252c3b; --text:#dfe6f2; --dim:#8894ab; }
+  body.light { --bg:#eef1f6; --panel:#ffffff; --line:#d3dae6; --text:#1a1f2b; --dim:#5b6579; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px; background:var(--bg); color:var(--text);
+         font:14px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+  h1 { font-size:20px; margin:0 0 4px; letter-spacing:.5px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:2px; color:var(--dim);
+       margin:32px 0 12px; font-weight:600; }
+  .sub { color:var(--dim); margin:0 0 20px; }
+  canvas { image-rendering:pixelated; display:block; }
+  .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+  button { font:inherit; font-size:13px; padding:6px 14px; border-radius:7px; cursor:pointer;
+           background:var(--panel); color:var(--text); border:1px solid var(--line); }
+  button.on { background:#2e6fd6; border-color:#2e6fd6; color:#fff; }
+  .swatches { display:flex; flex-wrap:wrap; gap:6px; }
+  .sw { width:56px; }
+  .sw i { display:block; height:34px; border-radius:5px; border:1px solid var(--line); }
+  .sw b { display:block; font:11px ui-monospace,monospace; color:var(--dim); font-weight:400;
+          text-align:center; padding-top:3px; }
+  .grid { display:flex; flex-wrap:wrap; gap:14px; }
+  .cell { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+          padding:12px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .cell .name { font:11px ui-monospace,monospace; color:var(--dim); }
+  .strip { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;
+           background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+           padding:16px; overflow-x:auto; }
+  .note { color:var(--dim); font-size:12px; margin-top:8px; }
+</style>
+<body>
+<h1>Sprite sheet</h1>
+<p class="sub">Every part rasterized from the shape DSL through the shared style pass. Phase 1 review page.</p>
+
+<div class="bar">
+  <button id="theme">Light background</button>
+  <button id="zoomOut">−</button><span id="zoomLabel">4×</span><button id="zoomIn">+</button>
+  <button id="gridToggle">Show cell grid</button>
+</div>
+
+<h2>Palette — 16 colors, 4 ramps</h2>
+<div class="swatches" id="swatches"></div>
+
+<h2>Parts</h2>
+<div class="grid" id="parts"></div>
+
+<h2>Rotations</h2>
+<div class="grid" id="rots"></div>
+
+<h2>At native size (1×)</h2>
+<div class="strip" id="native"></div>
+
+<h2>Assembled — the real consistency test</h2>
+<div class="stage"><canvas id="stage"></canvas></div>
+<p class="note">If these read as one art set at a glance, the pipeline works. Look for mismatched outline weight, palette drift, or parts that don't sit flush on the 32px grid.</p>
+
+<script type="module">
+import { PALETTE } from './palette.js';
+import { buildAtlas, spriteCanvas, spriteNames, SPRITES, ROTATABLE } from './atlas.js';
+
+buildAtlas();
+let zoom = 4, showGrid = false;
+
+// spriteCanvas returns a CACHED, shared canvas meant for drawImage. Appending
+// it to the DOM would move the same node between sections, so this page always
+// blits into a fresh canvas of its own.
+function displayCanvas(name, turns, scale) {
+  const src = spriteCanvas(name, turns, scale);
+  const cv = document.createElement('canvas');
+  cv.width = src.width; cv.height = src.height;
+  cv.getContext('2d').drawImage(src, 0, 0);
+  return cv;
+}
+
+// -- palette swatches
+document.getElementById('swatches').innerHTML = PALETTE.map((hex, i) =>
+  `<div class="sw"><i style="background:${hex}"></i><b>${i}</b></div>`).join('');
+
+// -- part tiles
+function renderParts() {
+  const host = document.getElementById('parts');
+  host.innerHTML = '';
+  for (const name of spriteNames()) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.appendChild(displayCanvas(name, 0, zoom));
+    const label = document.createElement('div');
+    label.className = 'name';
+    label.textContent = `${name}  ${SPRITES[name].w}×${SPRITES[name].h}`;
+    cell.appendChild(label);
+    host.appendChild(cell);
+  }
+}
+
+function renderRots() {
+  const host = document.getElementById('rots');
+  host.innerHTML = '';
+  for (const name of ROTATABLE) {
+    for (let t = 0; t < 4; t++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.appendChild(displayCanvas(name, t, zoom));
+      const label = document.createElement('div');
+      label.className = 'name';
+      label.textContent = `${name} ${t * 90}°`;
+      cell.appendChild(label);
+      host.appendChild(cell);
+    }
+  }
+}
+
+function renderNative() {
+  const host = document.getElementById('native');
+  host.innerHTML = '';
+  for (const name of spriteNames()) host.appendChild(displayCanvas(name, 0, 1));
+}
+
+// -- assembled mockups. Positions are in 32px grid cells.
+const CELL = 32;
+const VEHICLES = [
+  { title: 'rover', parts: [
+    ['block', 1, 1], ['block', 2, 1], ['block', 3, 1],
+    ['block', 1, 2], ['ballast', 2, 2], ['block', 3, 2],
+    ['wedge', 4, 2], ['booster', 2, 0], ['jet', 0, 1],
+    ['wheel_big', 0.6, 2.5], ['wheel_small', 3.15, 3.0],
+  ]},
+  { title: 'crawler', parts: [
+    ['light_block', 1, 0], ['light_block', 2, 0], ['light_block', 3, 0],
+    ['block', 1, 1], ['block', 2, 1], ['block', 3, 1],
+    ['grip_hook', 4, 1], ['wing', 1.5, -0.9], ['jump_jet', 0, 1],
+    ['tread', 1, 2], ['tread', 3, 2],
+  ]},
+  { title: 'racer', parts: [
+    ['block', 1, 1], ['light_block', 2, 1], ['block', 3, 1],
+    ['bumper', 4, 1], ['grip_surge', 2, 0], ['booster', 0, 1],
+    ['wheel_small', 1, 2], ['wheel_small', 3.3, 2],
+  ]},
+];
+
+function renderStage() {
+  const cv = document.getElementById('stage');
+  const ctx = cv.getContext('2d');
+  const z = 2;  // fixed, so all three vehicles fit side by side
+  const colW = 7 * CELL, rowH = 5 * CELL;
+  cv.width = colW * VEHICLES.length * z;
+  cv.height = rowH * z;
+  cv.style.width = cv.width + 'px';
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  if (showGrid) {
+    ctx.strokeStyle = 'rgba(127,150,200,.22)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= cv.width; x += CELL * z) {
+      ctx.beginPath(); ctx.moveTo(x + .5, 0); ctx.lineTo(x + .5, cv.height); ctx.stroke();
+    }
+    for (let y = 0; y <= cv.height; y += CELL * z) {
+      ctx.beginPath(); ctx.moveTo(0, y + .5); ctx.lineTo(cv.width, y + .5); ctx.stroke();
+    }
+  }
+
+  VEHICLES.forEach((v, vi) => {
+    const ox = vi * colW * z;
+    for (const [name, cx, cy] of v.parts) {
+      const img = spriteCanvas(name, 0, 1);
+      ctx.drawImage(img, 0, 0, img.width, img.height,
+        ox + cx * CELL * z, (cy + 1) * CELL * z, img.width * z, img.height * z);
+    }
+  });
+}
+
+function renderAll() {
+  document.getElementById('zoomLabel').textContent = zoom + '×';
+  renderParts(); renderRots(); renderNative(); renderStage();
+}
+
+document.getElementById('zoomIn').onclick = () => { zoom = Math.min(10, zoom + 1); renderAll(); };
+document.getElementById('zoomOut').onclick = () => { zoom = Math.max(1, zoom - 1); renderAll(); };
+document.getElementById('theme').onclick = (e) => {
+  document.body.classList.toggle('light');
+  e.target.textContent = document.body.classList.contains('light') ? 'Dark background' : 'Light background';
+};
+document.getElementById('gridToggle').onclick = (e) => {
+  showGrid = !showGrid; e.target.classList.toggle('on', showGrid); renderStage();
+};
+
+renderAll();
+</script>

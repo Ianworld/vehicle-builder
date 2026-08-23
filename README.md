@@ -1,0 +1,147 @@
+# Vehicle Builder
+
+Build a vehicle out of grid parts, then race it head to head. Two screens: a
+**builder** and (coming in phase 4) a **split-screen racer**.
+
+Designed for a young kid on both a touchscreen and a laptop: no fail states,
+big targets, icon-driven, undo everywhere, no typing required.
+
+## Run it locally
+
+ES modules can't load over `file://`, so it needs a static server — but nothing
+in the app depends on that server existing.
+
+```bash
+python3 -m http.server 8700 --directory "vehicle builder"
+```
+
+Then open <http://localhost:8700/index.html>.
+
+There is also a `vehicle-builder` entry in `../.claude/launch.json`.
+
+Sprite review page: <http://localhost:8700/src/art/sheet.html>
+
+## Deploy to GitHub Pages
+
+This folder is the site. No build step, no Actions workflow — push it and point
+Pages at the branch.
+
+Three constraints are baked in and must stay that way:
+
+1. **Every path is relative.** Pages serves from `https://<user>.github.io/<repo>/`,
+   a subpath. A root-absolute path like `/src/main.js` works on localhost and
+   404s in production. Verified by serving from a nested path locally.
+2. **Storage keys are namespaced `vb:`.** `<user>.github.io` is a single origin
+   shared by every repo you host there.
+3. **`.nojekyll` is present**, so Pages doesn't run a Jekyll pass that ignores
+   `_`-prefixed files.
+
+## Architecture
+
+```
+src/art/     palette -> rasterizer -> sprites -> atlas     (see "Art" below)
+src/game/    parts catalog, vehicle model, codec, storage, share
+src/ui/      pointer input, builder screen, garage screen, thumbnails
+```
+
+### Art: sprites are code
+
+Sprites are **geometric primitives against a locked 16-color palette**,
+rasterized to a hard-edged pixel grid at load — not generated raster images.
+
+For 32px grid tiles this beats an image model. Palette lock becomes structural
+instead of prompted (a sprite physically cannot use an off-palette color), grid
+alignment is exact by construction, and changing a part is a two-line edit
+rather than a regenerate-and-clean cycle.
+
+The consistency trick is that **style lives in the rasterizer, not in each
+sprite**: one pass adds a 1px ink outline plus a bevel to every sprite
+identically. The bevel infers direction from relative luminance — a region
+darker than its neighbour reads as a recessed pocket and shades at the top, a
+lighter region reads as a raised boss and highlights at the top. That single
+rule is what makes independently-authored sprites look like one artist.
+
+Two gotchas worth remembering:
+
+- `spriteCanvas()` returns a **shared cached** canvas for `drawImage`. Appending
+  it to the DOM moves the same node between parents. Use `spriteCopy()` for DOM.
+- Polygon coordinates are **continuous, not pixel indices**: a shape covering a
+  32px sprite spans `0..32`. Using `0..31` silently drops the last row/column.
+
+### Persistence
+
+Static hosting means the browser is the only place a vehicle can live.
+
+| Layer | Role |
+|---|---|
+| IndexedDB | Primary store. localStorage is the obvious choice and the wrong one — mobile browsers clear it under storage pressure. |
+| `navigator.storage.persist()` | Asks the browser to exempt the origin from eviction. Requested on boot. |
+| localStorage mirror | Cheap redundant copy; covers IndexedDB being blocked. |
+| `reconcile()` | Runs at boot and makes the two stores agree **in both directions**, so a wipe of either one self-heals instead of silently leaving a single copy. |
+| Export / import | `garage.json`. The honest backup, since browser storage is per-device however durable it is. |
+| Share links | `#v=<base64>` encodes a whole vehicle in the URL. A third backup path, and how a vehicle moves between devices or people with no backend. |
+
+A realistic 10–30 part vehicle is a 100–400 character link. A completely full
+14x9 grid is ~1750 characters, still inside practical URL limits.
+
+### Physics
+
+planck.js 1.5 (vendored, MIT). One rigid chassis body with a fixture per part;
+wheels are separate circle bodies on `WheelJoint`s, which give a motor and
+spring suspension in one joint. The plow is a real triangular polygon — a box
+there would do nothing.
+
+Two things that took real tuning, both worth knowing before changing numbers:
+
+- **Torque fights climbing against wheelies.** Enough torque to climb a 33°
+  ledge is enough to loop the vehicle over backwards. Resolved with an
+  anti-wheelie damper keyed on *rotation rate*, not hull angle — a wheelie
+  spins up fast, whereas a vehicle parked on a 35° slope sits at the same angle
+  but barely rotates, so genuine hill climbing is left alone.
+- **"Never stuck" is a stronger promise than "never upside down."** Vehicles
+  beached nose-up at 80–90° with their wheels spinning in the air, nowhere near
+  a flip. Recovery therefore watches *forward progress*, with fast paths for
+  being inverted — including inverted **at speed**, since a vehicle can slide
+  20 m on its roof while still technically making progress.
+
+Plow height matters: mounted in the wheel-contact row it becomes a ground
+anchor and pins the vehicle. It belongs one row above the wheels.
+
+Testbed: <http://localhost:8700/src/game/testbed.html> (pick a vehicle and
+track, spawn upside-down, slow-mo). It exposes `__step(seconds)` and
+`__reset(vehicle, track, upsideDown)` for headless verification, because some
+embedded browser panes never fire `requestAnimationFrame`.
+
+### Racing
+
+Two **independent worlds**, one per racer, each holding its own copy of the
+track. Neither can shove the other and neither is perturbed by the other's
+debris, so a race is fair and repeatable — and split screen falls out for free.
+
+Split direction follows the viewport: portrait stacks the panes, anything
+landscape puts them side by side. A side-scroller needs WIDE panes; two 187px
+columns on a phone would be unplayable.
+
+The action button fires **every special on the vehicle at once**, each on its
+own cooldown — one rule a kid can predict. Keys are `A` (P1) and `L` (P2).
+
+When the leader crosses, the trailing vehicle keeps driving for six more
+seconds, because crossing the line is the fun part even when you have lost.
+It is then reported by distance reached, never as "did not finish".
+
+The frame loop is rAF with a **watchdog**: if rAF goes quiet for 120 ms a timer
+takes over. An earlier version latched a `rafSeen` flag on the first frame,
+which permanently disabled the fallback and stalled the race. The loop also
+holds while `document.hidden`, so a backgrounded tab does not crawl through a
+race in slow motion.
+
+## Status
+
+- [x] Phase 1 — art system
+- [x] Phase 2 — builder + persistence
+- [x] Phase 3 — physics (planck.js, one rigid chassis + wheel joints)
+- [x] Phase 4 — split-screen race
+- [ ] Phase 5 — polish
+
+Deferred: part breakage. The chassis is one rigid body today; adding breakage
+later means splitting it into weld-jointed sub-bodies, not a rewrite.

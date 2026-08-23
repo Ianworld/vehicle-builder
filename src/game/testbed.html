@@ -1,0 +1,142 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Physics testbed</title>
+<script src="../../vendor/planck.min.js"></script>
+<style>
+  body { margin:0; background:#0d1017; color:#e4eaf5;
+         font:14px ui-sans-serif,system-ui,sans-serif; }
+  .bar { display:flex; gap:8px; align-items:center; padding:10px; flex-wrap:wrap; }
+  select, button { font:inherit; padding:7px 12px; border-radius:8px;
+                   background:#1d2433; color:#e4eaf5; border:1px solid #2a3344; cursor:pointer; }
+  button.on { background:#2e9fd6; border-color:#2e9fd6; color:#04121b; }
+  canvas { display:block; width:100%; height:62vh; image-rendering:pixelated; background:#000; }
+  .hud { padding:8px 12px; font:12px ui-monospace,monospace; color:#8a95ab; white-space:pre; }
+</style>
+<body>
+<div class="bar">
+  <select id="veh"></select>
+  <select id="trk"></select>
+  <button id="restart">Restart</button>
+  <button id="action">Action (Space)</button>
+  <button id="slow">Slow-mo</button>
+  <button id="tip">Spawn upside-down</button>
+  <label><input type="checkbox" id="follow" checked> follow</label>
+</div>
+<canvas id="cv"></canvas>
+<div class="hud" id="hud"></div>
+
+<script type="module">
+import * as V from './vehicle.js';
+import * as PH from './physics.js';
+import * as TR from './track.js';
+import { buildAtlas } from '../art/atlas.js';
+import { renderView, makeCamera } from '../ui/render.js';
+
+buildAtlas();
+const planck = window.planck;
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const cam = makeCamera();
+
+const NAMES = ['plodder', 'hopper', 'spike'];
+const vehicles = {};
+for (const n of NAMES) {
+  vehicles[n] = V.normalize(await (await fetch(`../../starter-vehicles/${n}.json`)).json());
+}
+document.getElementById('veh').innerHTML = NAMES.map(n => `<option>${n}</option>`).join('');
+document.getElementById('trk').innerHTML = TR.TRACKS.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+let world, build, racer, t, slow = false, upside = false;
+
+function reset() {
+  const track = TR.getTrack(document.getElementById('trk').value);
+  world = PH.createWorld(planck);
+  build = TR.buildTrack(planck, world, track);
+  const spawn = TR.spawnPoint(track, 3);
+  racer = PH.createRacer(planck, world, vehicles[document.getElementById('veh').value], spawn);
+  if (upside) {
+    racer.chassis.setAngle(Math.PI);
+    racer.chassis.setPosition(new planck.Vec2(spawn.x, spawn.y + 1.2));
+    for (const w of racer.wheels) w.body.setPosition(new planck.Vec2(spawn.x, spawn.y + 1.2));
+  }
+  t = 0;
+  cam.x = spawn.x; cam.y = spawn.y;
+}
+reset();
+
+function resize() {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = cv.clientWidth * dpr;
+  cv.height = cv.clientHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+new ResizeObserver(resize).observe(cv);
+resize();
+
+let acc = 0, last = performance.now();
+function frame(now) {
+  const real = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  acc += real * (slow ? 0.25 : 1);
+  const dt = 1 / 60;
+  while (acc >= dt) {
+    PH.updateRacer(racer, dt, { throttle: 1 });
+    world.step(dt);
+    acc -= dt; t += dt;
+  }
+
+  const p = racer.chassis.getPosition();
+  if (document.getElementById('follow').checked) {
+    cam.x += (p.x - cam.x) * 0.12;
+    cam.y += (p.y - cam.y) * 0.08;
+  }
+  renderView({ ctx, vw: cv.clientWidth, vh: cv.clientHeight }, cam, build, [racer]);
+
+  const v = racer.chassis.getLinearVelocity();
+  const susp = racer.wheels.map(w =>
+    ((w.body.getPosition().y - racer.chassis.getPosition().y)).toFixed(2)).join(' ');
+  document.getElementById('hud').textContent =
+    `t=${t.toFixed(1)}s  x=${p.x.toFixed(1)}/${build.length}m  v=${v.x.toFixed(2)} m/s  ` +
+    `angle=${(racer.chassis.getAngle() * 57.3).toFixed(0)}deg  mass=${racer.chassis.getMass().toFixed(0)}kg\n` +
+    `assists=${racer.recoveries}  recovering=${racer.recoverFor > 0 ? 'YES' : 'no'}  ` +
+    `stalled=${racer.stalledFor.toFixed(1)}s  boost=${racer.boostFor.toFixed(1)}  grip=${racer.gripFor.toFixed(1)}\n` +
+    `wheel dY (suspension travel): ${susp}`;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+document.getElementById('restart').onclick = reset;
+document.getElementById('veh').onchange = reset;
+document.getElementById('trk').onchange = reset;
+document.getElementById('action').onclick = () => PH.fireAction(racer);
+document.getElementById('slow').onclick = (e) => { slow = !slow; e.target.classList.toggle('on', slow); };
+document.getElementById('tip').onclick = (e) => { upside = !upside; e.target.classList.toggle('on', upside); reset(); };
+addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); PH.fireAction(racer); } });
+window.__t = () => ({ x: +racer.chassis.getPosition().x.toFixed(2), t: +t.toFixed(2),
+  assists: racer.recoveries, angle: +(racer.chassis.getAngle() * 57.3).toFixed(0),
+  recovering: racer.recoverFor > 0, vx: +racer.chassis.getLinearVelocity().x.toFixed(2) });
+
+// Headless step hook: some embedded browser panes never run requestAnimationFrame,
+// so verification drives the sim directly and then renders one frame.
+window.__step = (seconds, opts = {}) => {
+  const dt = 1 / 60;
+  for (let i = 0; i < Math.round(seconds / dt); i++) {
+    if (opts.actionAt !== undefined && Math.abs(t - opts.actionAt) < dt) PH.fireAction(racer);
+    PH.updateRacer(racer, dt, { throttle: 1 });
+    world.step(dt); t += dt;
+  }
+  const p2 = racer.chassis.getPosition();
+  cam.x = p2.x; cam.y = p2.y;
+  renderView({ ctx, vw: cv.clientWidth, vh: cv.clientHeight }, cam, build, [racer]);
+  return window.__t();
+};
+window.__reset = (v, tr, ups) => {
+  if (v) document.getElementById('veh').value = v;
+  if (tr) document.getElementById('trk').value = tr;
+  upside = !!ups;
+  reset();
+  renderView({ ctx, vw: cv.clientWidth, vh: cv.clientHeight }, cam, build, [racer]);
+  return window.__t();
+};
+</script>
