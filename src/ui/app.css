@@ -238,7 +238,15 @@ canvas { display:block; image-rendering:pixelated; }
 .chosen { background:#0a0d14; border-radius:10px; padding:8px; margin-bottom:10px;
           display:flex; flex-direction:column; align-items:center; }
 .chosen .cname { font-weight:700; margin-top:6px; }
-.choices { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; }
+/* Wrap like text. A single scrolling row hid most of the garage behind a
+   sideways swipe once there were more than a handful of vehicles. */
+.choices {
+  /* Sized by content so it grows as it wraps; .selBody does the scrolling.
+     Giving this flex:1 1 auto + min-height:0 collapsed it to 4px, because the
+     picker's height comes from its content and there was nothing to fill. */
+  display:flex; flex-wrap:wrap; align-content:flex-start; gap:8px;
+  padding-bottom:4px;
+}
 .vchip {
   flex:none; width:88px; background:var(--panel2); border:2px solid var(--line);
   border-radius:10px; padding:5px; cursor:pointer; color:var(--dim);
