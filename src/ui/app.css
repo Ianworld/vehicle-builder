@@ -272,6 +272,19 @@ canvas { display:block; image-rendering:pixelated; }
 .chosen { background:#0a0d14; border-radius:10px; padding:8px; margin-bottom:10px;
           display:flex; flex-direction:column; align-items:center; }
 .chosen .cname { font-weight:700; margin-top:6px; }
+.chosenActions { display:flex; gap:8px; margin:-4px 0 10px; }
+.chosenActions .btn { flex:1; min-height:38px; font-size:13px; }
+
+/* "Build a new one" sits in the same row as the vehicles it will join, so it
+   reads as one more option rather than a separate mode. */
+.addChip {
+  border-style:dashed; border-color:#3e4a63; justify-content:center;
+}
+.addChip i {
+  font-style:normal; font-size:26px; line-height:1; color:var(--accent);
+  width:48px; height:48px; display:flex; align-items:center; justify-content:center;
+}
+.addChip:hover, .addChip:active { border-color:var(--accent); color:var(--text); }
 /* Wrap like text. A single scrolling row hid most of the garage behind a
    sideways swipe once there were more than a handful of vehicles. */
 .choices {

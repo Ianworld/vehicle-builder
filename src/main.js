@@ -26,12 +26,15 @@ function swap(factory) {
   window.__vb = current;
 }
 
+/** Last race-screen selection, so a trip through the builder comes back to it. */
+let selection = null;
+
 function showGarage() {
   swap((mount) => createGarage({
     mount,
-    onNew: () => showBuilder(V.emptyVehicle()),
-    onEdit: (v) => showBuilder(v),
-    onRace: showSelect,
+    onNew: () => showBuilder(V.emptyVehicle(), { back: showGarage }),
+    onEdit: (v) => showBuilder(v, { back: showGarage }),
+    onRace: () => showSelect(selection),
   }));
 }
 
@@ -43,15 +46,39 @@ async function raceRoster() {
   return [...saved, ...starters.filter((v) => !seen.has(v.id))];
 }
 
-async function showSelect() {
+async function showSelect(initial) {
   const vehicles = await raceRoster();
   swap((mount) => createSelect({
-    mount, vehicles,
+    mount, vehicles, initial,
     planck: window.planck,
-    onExit: showGarage,
-    onStart: (cfg) => showRace(cfg),
+    onGarage: (state) => { selection = state; showGarage(); },
+    onStart: (cfg) => { selection = cfg.state; showRace(cfg); },
+
+    // Build a new vehicle straight from the race screen, and come back with it
+    // already picked for that player.
+    onNew: (playerIndex, state) => {
+      selection = state;
+      const v = V.emptyVehicle();
+      showBuilder(v, { back: () => showSelect(withPick(state, playerIndex, v.id)) });
+    },
+
+    // Editing a built-in rival edits YOUR COPY of it. The rivals have to stay
+    // available to race against, and a fresh browser has nothing else.
+    onEdit: (vehicle, playerIndex, state) => {
+      selection = state;
+      const v = vehicle.starter
+        ? { ...V.clone(vehicle), id: V.newId(), name: vehicle.name + ' copy', starter: false }
+        : vehicle;
+      showBuilder(v, { back: () => showSelect(withPick(state, playerIndex, v.id)) });
+    },
   }));
 }
+
+const withPick = (state, i, id) => {
+  const pickIds = [...(state?.pickIds || [])];
+  pickIds[i] = id;
+  return { ...state, pickIds };
+};
 
 function showRace(cfg) {
   swap((mount) => createRace({
@@ -59,16 +86,16 @@ function showRace(cfg) {
     planck: window.planck,
     trackId: cfg.trackId,
     entries: cfg.entries,
-    onExit: showGarage,
+    onExit: () => showSelect(selection),
     onAgain: () => showRace(cfg),
   }));
 }
 
-function showBuilder(vehicle) {
+function showBuilder(vehicle, { back } = {}) {
   swap((mount) => createBuilder({
     mount,
     vehicle,
-    onExit: showGarage,
+    onExit: back || showGarage,
     onSave: (v) => store.saveVehicle(v),
   }));
 }
@@ -81,10 +108,12 @@ async function boot() {
   const shared = share.vehicleFromHash();
   if (shared) {
     share.clearHash();
-    showBuilder(shared);
+    showBuilder(shared, { back: () => showSelect(selection) });
     return;
   }
-  showGarage();
+  // The race screen is home: it is what a player actually wants to do, and
+  // everything else is reachable from it.
+  showSelect();
 }
 
 boot();

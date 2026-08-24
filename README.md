@@ -158,6 +158,20 @@ Note `getInertia()` is measured about the body ORIGIN, not the centre of mass
 must use `inertiaAboutCoM()` in `physics.js` so gains mean the same thing on
 every vehicle.
 
+### Screens
+
+The **race screen is home**. It is what a player actually wants to do, so
+everything needed to get into a race is reachable from it: a `+ New` chip in
+each player's row builds a vehicle from scratch, and the chosen vehicle has an
+Edit button beside it. Both return to the race screen with that vehicle already
+picked and the track selection intact. The garage still exists for bulk work
+(rename, delete, backup, share) but is now an optional detour rather than a
+place you must pass through.
+
+Editing a built-in rival edits **your copy** of it. The rivals have to stay
+available to race against, and a fresh browser has nothing else — so the button
+reads "Copy & Edit" on a rival and plain "Edit" on your own vehicles.
+
 ### Tracks
 
 Seven tracks. Beyond terrain shape they vary along axes that make different
