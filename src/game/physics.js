@@ -1,8 +1,20 @@
 // Runtime physics for one vehicle: drive, thrust, aero, specials, auto-right.
 
 import { buildVehicle, M } from './build.js';
+import { surfaceAt } from './track.js';
 
 export const GRAVITY = -10;
+
+/**
+ * Air drag, per metre of vehicle height, quadratic in speed.
+ *
+ * Wheels are speed-limited by their motor, but a jet had nothing opposing it at
+ * all -- no terminal velocity, so a jet sled simply accelerated until the track
+ * ran out and beat every wheeled build on six of seven tracks. Scaling by
+ * height also means a tall vehicle pushes more air, which quietly reinforces
+ * the same "keep it low" lesson the centre-of-mass marker teaches.
+ */
+const DRAG_PER_METRE = 2.0;
 
 // The kid-friendly guarantee is "never stuck", which is a stronger promise than
 // "never upside down". Vehicles were beaching nose-up at 80-90 degrees with
@@ -30,6 +42,8 @@ export function createRacer(planck, world, vehicle, spawn) {
     boostFor: 0,
     gripFor: 0,
     hopFor: 0,
+    track: null,        // set by the race so surfaces can be sampled
+    surface: null,      // what the wheels are standing on right now
     invertedFor: 0,
     stalledFor: 0,
     recoverFor: 0,
@@ -108,11 +122,40 @@ export function updateRacer(racer, dt, input = {}) {
   // -- drive -----------------------------------------------------------
   // Negative motor speed spins a wheel clockwise, which drives +x.
   const boosting = racer.boostFor > 0;
+  const vel0 = chassis.getLinearVelocity();
+
   for (const w of racer.wheels) {
     w.joint.setMotorSpeed(-w.maxSpeed * throttle * (boosting ? 1.35 : 1));
     w.joint.setMaxMotorTorque(w.part.wheel.motorTorque * (boosting ? 1.6 : 1));
-    const grip = racer.gripFor > 0 ? w.baseFriction * (racer.gripMultiplier || 1) : w.baseFriction;
-    if (w.fixture.getFriction() !== grip) w.fixture.setFriction(grip);
+
+    // Ground material acts on WHEELS ONLY. That is the whole point: a jet
+    // pushes against the chassis and ignores what is underneath, while a tread
+    // starts from so much more friction that ice barely troubles it.
+    const surf = racer.track ? surfaceAt(racer.track, w.body.getPosition().x) : null;
+    const surge = racer.gripFor > 0 ? (racer.gripMultiplier || 1) : 1;
+    const grip = w.baseFriction * surge * (surf ? surf.grip : 1);
+    if (Math.abs(w.fixture.getFriction() - grip) > 1e-4) w.fixture.setFriction(grip);
+
+    // Rolling resistance for the soft surfaces -- mud and sand sap a wheel
+    // regardless of how much torque it has.
+    if (surf && surf.roll > 0 && Math.abs(vel0.x) > 0.05) {
+      const load = (chassis.getMass() / Math.max(1, racer.wheels.length)) * -GRAVITY;
+      const drag = -Math.sign(vel0.x) * surf.roll * load;
+      chassis.applyForce(new Vec2(drag, 0), w.body.getPosition(), true);
+    }
+  }
+  racer.surface = racer.track ? surfaceAt(racer.track, chassis.getPosition().x) : null;
+
+  // -- air drag ----------------------------------------------------------
+  if (racer.frontalHeight === undefined) {
+    let lo = Infinity, hi = -Infinity;
+    for (const hr of racer.hullRender) { lo = Math.min(lo, hr.cy - hr.h / 2); hi = Math.max(hi, hr.cy + hr.h / 2); }
+    racer.frontalHeight = Math.max(0.5, hi - lo);
+  }
+  const vx = chassis.getLinearVelocity().x;
+  if (Math.abs(vx) > 0.2) {
+    const drag = -Math.sign(vx) * DRAG_PER_METRE * racer.frontalHeight * vx * vx;
+    chassis.applyForceToCenter(new Vec2(drag, 0), true);
   }
 
   // -- jets ------------------------------------------------------------

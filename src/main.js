@@ -47,6 +47,7 @@ async function showSelect() {
   const vehicles = await raceRoster();
   swap((mount) => createSelect({
     mount, vehicles,
+    planck: window.planck,
     onExit: showGarage,
     onStart: (cfg) => showRace(cfg),
   }));

@@ -158,6 +158,47 @@ Note `getInertia()` is measured about the body ORIGIN, not the centre of mass
 must use `inertiaAboutCoM()` in `physics.js` so gains mean the same thing on
 every vehicle.
 
+### Tracks
+
+Seven tracks. Beyond terrain shape they vary along axes that make different
+parts win:
+
+| | what it tests |
+|---|---|
+| Rolling Hills | nothing; a first race |
+| Boulder Pass | loose obstacles and climbable ledges |
+| The Gap | jumps, carrying speed |
+| Slick Pass | **ground material** — ice, tarmac |
+| Rockslide | **piles of rock to shove**, plus sand |
+| Low Road | **height limit** — beams overhead |
+| Old Bridge | **weight limit** — planks that give way |
+
+**Materials** (`SURFACES` in `track.js`) scale wheel grip and rolling
+resistance, and act on WHEELS ONLY. That is what makes the drive parts feel
+different: a jet pushes on the chassis and does not care what is underneath, and
+a tread starts from friction 2.4 against a small wheel's 1.1, so ice barely
+troubles it. Two things learned tuning this:
+
+- Ice on the *flat* does nothing. A wheel there only needs enough grip to beat
+  air drag, so slippery flat ground is scenery. Ice has to sit where traction
+  decides the outcome — but not on steps either, because horizontal thrust
+  cannot climb a wall and that punishes jets just as hard. Flat, fast ice with
+  the steps on the grippy sections is what separates them.
+- Jets had **no terminal velocity at all** — nothing opposed thrust, so a jet
+  sled beat every wheeled build on six of seven tracks. Air drag (quadratic,
+  scaled by vehicle height so tall builds pay more) plus a large thrust cut
+  fixed it.
+
+**Breakable features** are deliberately scripted, not emergent: a plank gives
+way above a mass limit, a beam gives way to a hull taller than its clearance.
+"Too heavy" and "too tall" have to be predictable enough for a child to learn,
+and an impulse threshold is neither legible nor repeatable. Both cost a lot of
+time without ever ending a race — the gully under a bridge is shallow.
+
+Track cards on the race screen are **real renders**: each builds an actual
+world and draws it with the same `renderView` the race uses, so the picture
+cannot drift from what you will drive through.
+
 ### Racing
 
 Two **independent worlds**, one per racer, each holding its own copy of the

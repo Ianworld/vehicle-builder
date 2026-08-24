@@ -25,7 +25,9 @@ export function project(cam, vw, vh) {
 
 function drawTerrain(ctx, p, vw, vh, trackBuild) {
   ctx.lineJoin = 'round';
-  for (const seg of trackBuild.segments) {
+  for (const segment of trackBuild.segments) {
+    const seg = segment.points;
+    const surf = segment.surface;
     // Cheap horizontal cull: terrain is thousands of samples long.
     const first = seg[0], last = seg[seg.length - 1];
     if (p.sx(last[0]) < -60 || p.sx(first[0]) > vw + 60) continue;
@@ -43,7 +45,7 @@ function drawTerrain(ctx, p, vw, vh, trackBuild) {
     ctx.lineTo(p.sx(last[0]), vh + 40);
     ctx.lineTo(p.sx(first[0]), vh + 40);
     ctx.closePath();
-    ctx.fillStyle = '#2b3a2c';
+    ctx.fillStyle = surf?.fill || '#2b3a2c';
     ctx.fill();
 
     // Grass cap
@@ -53,7 +55,7 @@ function drawTerrain(ctx, p, vw, vh, trackBuild) {
       const px = p.sx(x), py = p.sy(y);
       if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
     }
-    ctx.strokeStyle = '#46b04a';
+    ctx.strokeStyle = surf?.cap || '#46b04a';
     ctx.lineWidth = Math.max(2, 3 * cam0(p));
     ctx.stroke();
   }
@@ -88,6 +90,41 @@ function drawProps(ctx, p, props) {
       ctx.moveTo(-h, -h); ctx.lineTo(h, h); ctx.moveTo(h, -h); ctx.lineTo(-h, h);
       ctx.stroke();
     }
+    ctx.restore();
+  }
+}
+
+/** Tunnel beams and bridge planks. Skipped once destroyed. */
+function drawBreakables(ctx, p, build) {
+  for (const b of build.breakables || []) {
+    if (b.gone) continue;
+    const pos = b.body.getPosition();
+    const px = p.sx(pos.x), py = p.sy(pos.y);
+    if (px < -120 || px > 1e5) continue;
+    const hw = b.half * p.s;
+    const hh = (b.kind === 'plank' ? 0.16 : b.height) * p.s;
+
+    ctx.save();
+    ctx.translate(px, py);
+    if (b.kind === 'plank') {
+      ctx.fillStyle = '#8a5a2a';
+      ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+      ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = Math.max(1, 2 * cam0(p));
+      ctx.beginPath();
+      ctx.moveTo(-hw, 0); ctx.lineTo(hw, 0);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#68738d';
+      ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+      // hazard stripes so the height limit reads as a warning
+      ctx.fillStyle = '#ffd23e';
+      const n = 3;
+      for (let i = 0; i < n; i++) {
+        ctx.fillRect(-hw + (i * 2 + 0.4) * (hw * 2) / (n * 2), -hh, (hw * 2) / (n * 2.6), hh * 2);
+      }
+    }
+    ctx.strokeStyle = '#12141c'; ctx.lineWidth = Math.max(1, 2 * cam0(p));
+    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
     ctx.restore();
   }
 }
@@ -236,6 +273,7 @@ export function renderView({ ctx, vw, vh }, cam, trackBuild, racers) {
   drawTerrain(ctx, p, vw, vh, trackBuild);
   drawFinish(ctx, p, trackBuild.length, vh);
   drawProps(ctx, p, trackBuild.props);
+  drawBreakables(ctx, p, trackBuild);
   for (const r of racers) drawRacer(ctx, p, r);
 
   ctx.restore();

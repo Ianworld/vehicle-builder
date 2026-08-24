@@ -5,7 +5,7 @@
 // the other's debris), makes split screen trivial, and keeps a race repeatable.
 
 import { createWorld, createRacer, updateRacer, fireAction } from './physics.js';
-import { getTrack, buildTrack, spawnPoint } from './track.js';
+import { getTrack, buildTrack, spawnPoint, updateTrack } from './track.js';
 
 export const COUNTDOWN = 3.2;
 const CELEBRATE = 6;      // seconds the loser keeps driving after the winner lands
@@ -16,6 +16,7 @@ export function createRace(planck, { trackId, entries }) {
     const world = createWorld(planck);
     const build = buildTrack(planck, world, track);
     const racer = createRacer(planck, world, entry.vehicle, spawnPoint(track, 3));
+    racer.track = track;      // lets the wheels sample the ground material
     return { index, entry, world, build, racer, finishTime: null, place: null };
   });
 
@@ -63,6 +64,7 @@ export function stepRace(race, dt) {
     for (const lane of race.lanes) {
       updateRacer(lane.racer, dt, { throttle: 0 });
       lane.world.step(dt);
+      updateTrack(lane.build, dt, lane.racer);
     }
     if (race.countdown <= 0) race.phase = 'racing';
     return;
@@ -74,6 +76,7 @@ export function stepRace(race, dt) {
     const finished = lane.finishTime !== null;
     updateRacer(lane.racer, dt, { throttle: finished ? 0 : 1 });
     lane.world.step(dt);
+    updateTrack(lane.build, dt, lane.racer);
 
     if (!finished && lane.racer.chassis.getPosition().x >= race.track.length) {
       lane.finishTime = race.elapsed;

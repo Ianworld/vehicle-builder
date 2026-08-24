@@ -19,6 +19,32 @@ function rng(seed) {
   };
 }
 
+/**
+ * Ground materials.
+ *
+ * `grip` scales how much traction a driven wheel gets; `roll` is rolling
+ * resistance. Both act on WHEELS ONLY, which is what makes the parts feel
+ * different: a jet pushes on the chassis and does not care what it is standing
+ * on, and a tread starts from friction 2.4 against a small wheel's 1.1, so ice
+ * hurts it far less. Ice therefore rewards jets, mud rewards treads, and
+ * tarmac rewards plain fast wheels.
+ */
+export const SURFACES = {
+  dirt:   { id: 'dirt',   grip: 1.00, roll: 0.00, fill: '#2b3a2c', cap: '#46b04a' },
+  tarmac: { id: 'tarmac', grip: 1.30, roll: 0.00, fill: '#23262e', cap: '#7b8494' },
+  ice:    { id: 'ice',    grip: 0.07, roll: 0.00, fill: '#26414f', cap: '#a8e4ff' },
+  mud:    { id: 'mud',    grip: 0.72, roll: 0.60, fill: '#33291d', cap: '#7a5c34' },
+  sand:   { id: 'sand',   grip: 0.62, roll: 0.26, fill: '#4a4028', cap: '#d9c07a' },
+};
+
+/** Material under a given point. Tracks list only their exceptions. */
+export function surfaceAt(track, x) {
+  for (const band of track.surfaces || []) {
+    if (x >= band[0] && x < band[1]) return SURFACES[band[2]] || SURFACES.dirt;
+  }
+  return SURFACES.dirt;
+}
+
 /** Fade terrain in over the first few metres so the start is always flat. */
 const easeIn = (x) => {
   if (x <= START_FLAT) return 0;
@@ -64,6 +90,7 @@ export const TRACKS = [
     id: 'hills',
     name: 'Rolling Hills',
     blurb: 'Gentle. Good for a first race.',
+    showcase: 46, cardZoom: 0.30,
     seed: 1337,
     length: 150,
     height: (x) => easeIn(x) * (
@@ -78,6 +105,7 @@ export const TRACKS = [
     id: 'boulders',
     name: 'Boulder Pass',
     blurb: 'Rocks and crates in the way. Bring a plow.',
+    showcase: 63, cardZoom: 0.50,
     seed: 4242,
     length: 170,
     height: (x) => easeIn(x) * (
@@ -112,6 +140,7 @@ export const TRACKS = [
     id: 'gap',
     name: 'The Gap',
     blurb: 'Big jumps. Carry your speed.',
+    showcase: 48, cardZoom: 0.24,
     seed: 909,
     length: 165,
     // Valleys with a floor, not bottomless pits. A fast vehicle launches off
@@ -125,6 +154,94 @@ export const TRACKS = [
     },
     holes: [],
     props: () => [],
+    features: [],
+  },
+
+  {
+    id: 'slick',
+    name: 'Slick Pass',
+    blurb: 'Ice and tarmac. Wheels spin — jets and treads do not.',
+    seed: 5150,
+    length: 160,
+    showcase: 54, cardZoom: 0.32,
+    // Ice is the clearest demonstration that the drive parts are different:
+    // a jet is unaffected because it pushes on the chassis, not the ground.
+    // The ice deliberately covers the climbs. On flat ground traction barely
+    // matters -- a wheel only needs enough grip to beat air drag -- so ice laid
+    // on the flat is scenery. On a gradient it decides who gets up.
+    surfaces: [[26, 54, 'ice'], [54, 72, 'tarmac'], [84, 116, 'ice'], [116, 138, 'tarmac']],
+    // The ice runs are kept FLAT and the steps sit on the grippy sections.
+    // A step inside an ice field punishes jets as much as wheels -- horizontal
+    // thrust cannot climb a wall -- which collapses the very difference the
+    // track exists to show. Flat ice is where thrust wins and wheels spin.
+    height: (x) => easeIn(x) * (1.10 * Math.sin(x * 0.095) + 0.40 * Math.sin(x * 0.23 + 1.1))
+      + ledge(x, 60, 0.55, 0.9) + ledge(x, 124, 0.60, 0.8),
+    holes: [],
+    props: () => [],
+    features: [],
+  },
+
+  {
+    id: 'rockslide',
+    name: 'Rockslide',
+    blurb: 'Piles of rock to shove through. A plow earns its place.',
+    seed: 8080,
+    length: 165,
+    showcase: 80, cardZoom: 0.62,
+    surfaces: [[96, 124, 'sand']],
+    height: (x) => easeIn(x) * (0.85 * Math.sin(x * 0.065) + 0.35 * Math.sin(x * 0.22)),
+    holes: [],
+    props: () => [],
+    features: [
+      { kind: 'rocks', x: 44,  rows: 3, perRow: 6, width: 2.8, radius: 0.23 },
+      { kind: 'rocks', x: 80,  rows: 3, perRow: 6, width: 3.0, radius: 0.24 },
+      { kind: 'rocks', x: 124, rows: 2, perRow: 7, width: 3.2, radius: 0.23 },
+    ],
+  },
+
+  {
+    id: 'lowroad',
+    name: 'Low Road',
+    blurb: 'Beams overhead. Build it tall and you will pay for it.',
+    seed: 3131,
+    length: 158,
+    showcase: 52, cardZoom: 0.34,
+    surfaces: [[74, 104, 'mud']],
+    height: (x) => easeIn(x) * (0.55 * Math.sin(x * 0.07) + 0.25 * Math.sin(x * 0.19 + 0.6)),
+    holes: [],
+    props: () => [],
+    features: [
+      // Starters are 1.50m (hopper, plodder) and 2.00m (spike) tall. The first
+      // arch waves everything sensible through; the second is a genuine
+      // constraint that only a low build clears.
+      { kind: 'tunnel', x: 46,  length: 14, clearance: 2.30, spacing: 1.7 },
+      { kind: 'tunnel', x: 112, length: 18, clearance: 1.80, spacing: 1.7 },
+    ],
+  },
+
+  {
+    id: 'oldbridge',
+    name: 'Old Bridge',
+    blurb: 'The planks hold light vehicles. Heavy ones go for a swim.',
+    seed: 6262,
+    length: 162,
+    showcase: 52, cardZoom: 0.26,
+    surfaces: [[120, 150, 'tarmac']],
+    // Shallow gullies under each bridge: a collapse costs time, never the race.
+    height: (x) => {
+      let h = easeIn(x) * 0.45 * Math.sin(x * 0.08);
+      for (const g of [52, 96]) {
+        const d = x - g;
+        if (d > -9 && d < 9) h -= 2.1 * Math.cos((d / 9) * Math.PI / 2) ** 2;
+      }
+      return h;
+    },
+    holes: [],
+    props: () => [],
+    features: [
+      { kind: 'bridge', x: 45, length: 14, planks: 7, limit: 150 },
+      { kind: 'bridge', x: 89, length: 14, planks: 7, limit: 110 },
+    ],
   },
 ];
 
@@ -134,54 +251,163 @@ const inHole = (track, x) => track.holes.some(([a, b]) => x > a && x < b);
 
 /**
  * Build one copy of a track into a world.
+ *
  * Terrain is emitted as separate chain segments so a hole is simply a missing
- * segment rather than a shape with a notch cut in it.
+ * segment, and so each stretch can carry its own material friction.
  */
 export function buildTrack(planck, world, track) {
-  const { Vec2, Chain, Circle, Box, Edge } = planck;
+  const { Vec2, Chain, Circle, Box, Edge, Polygon } = planck;
   const ground = world.createBody({ type: 'static' });
 
+  // --- terrain, split on holes AND on any change of material ---------------
   const segments = [];
   let run = [];
+  let runSurface = null;
+  const flush = () => {
+    if (run.length > 1) segments.push({ points: run, surface: runSurface });
+    run = [];
+  };
   for (let x = LEAD_IN; x <= track.length + 24; x += SAMPLE) {
-    if (inHole(track, x)) {
-      if (run.length > 1) segments.push(run);
-      run = [];
-      continue;
+    if (inHole(track, x)) { flush(); runSurface = null; continue; }
+    const surf = surfaceAt(track, x);
+    if (runSurface && surf.id !== runSurface.id) {
+      const carry = run[run.length - 1];
+      flush();
+      run.push(carry);          // share the seam so there is no gap to catch on
     }
+    runSurface = surf;
     run.push([x, track.height(x)]);
   }
-  if (run.length > 1) segments.push(run);
+  flush();
 
   for (const seg of segments) {
     ground.createFixture({
-      shape: new Chain(seg.map(([x, y]) => new Vec2(x, y)), false),
-      friction: 0.92,
+      shape: new Chain(seg.points.map(([x, y]) => new Vec2(x, y)), false),
+      friction: 0.92 * (seg.surface?.grip ?? 1),
       density: 0,
     });
   }
 
-  // Walls: a back stop so a vehicle cannot reverse out of the world, and a
-  // catch far past the finish.
+  // Back stop so a vehicle cannot reverse out of the world.
   ground.createFixture({
     shape: new Edge(new Vec2(LEAD_IN, track.height(LEAD_IN) - 2),
                     new Vec2(LEAD_IN, track.height(LEAD_IN) + 12)),
     friction: 0.2,
   });
 
+  // --- loose props ---------------------------------------------------------
   const props = [];
   const r = rng(track.seed);
-  for (const p of track.props(r, track.height)) {
+  const addProp = (p) => {
     const body = world.createBody({ type: 'dynamic', position: new Vec2(p.x, p.y) });
     if (p.kind === 'boulder') {
-      body.createFixture({ shape: new Circle(p.radius), density: 34, friction: 0.7, restitution: 0.1 });
+      body.createFixture({ shape: new Circle(p.radius), density: p.density ?? 34, friction: 0.7, restitution: 0.1 });
     } else {
-      body.createFixture({ shape: new Box(p.size, p.size), density: 28, friction: 0.6, restitution: 0.05 });
+      body.createFixture({ shape: new Box(p.size, p.size), density: p.density ?? 28, friction: 0.6, restitution: 0.05 });
     }
     props.push({ body, ...p });
+  };
+  for (const p of track.props(r, track.height)) addProp(p);
+
+  // --- features ------------------------------------------------------------
+  const breakables = [];      // scripted-destructible: beams and planks
+
+  for (const f of track.features || []) {
+    if (f.kind === 'rocks') {
+      // A mound: wide at the base, tapering up. Individually shovable, but a
+      // wall of them stops a blunt nose, which is what makes a plow worth its
+      // weight.
+      const rows = f.rows ?? 4;
+      for (let row = 0; row < rows; row++) {
+        const n = Math.max(1, (f.perRow ?? 7) - row * 2);
+        for (let i = 0; i < n; i++) {
+          const rad = (f.radius ?? 0.26) * (0.8 + r() * 0.45);
+          const spread = (f.width ?? 3.2) * (1 - row / (rows + 1));
+          const x = f.x + (n === 1 ? 0 : (i / (n - 1) - 0.5) * spread) + (r() - 0.5) * 0.18;
+          addProp({ kind: 'boulder', x, y: track.height(f.x) + 0.35 + row * (rad * 1.9),
+                    radius: rad, density: f.density ?? 15 });
+        }
+      }
+    }
+
+    if (f.kind === 'tunnel') {
+      // A run of low beams. Solid enough to be a real ceiling, but scripted to
+      // give way to a vehicle that is too tall (see updateTrack) so a bad build
+      // loses a lot of time instead of being stuck forever.
+      const n = Math.max(1, Math.round(f.length / (f.spacing ?? 1.6)));
+      for (let i = 0; i < n; i++) {
+        const x = f.x + (i + 0.5) * (f.length / n);
+        const y = track.height(x) + f.clearance;
+        const body = world.createBody({ type: 'static', position: new Vec2(x, y + 0.28) });
+        body.createFixture({ shape: new Box(0.42, 0.28), friction: 0.4, density: 0 });
+        breakables.push({ kind: 'beam', body, x, bottom: y, half: 0.42, height: 0.28, gone: false, load: 0 });
+      }
+    }
+
+    if (f.kind === 'bridge') {
+      // Planks over a gully. They hold a light vehicle and give way under a
+      // heavy one; the gully below is shallow, so a collapse costs time rather
+      // than ending the race.
+      const n = f.planks ?? 6;
+      const span = f.length / n;
+      // The deck is derived from the ground at each abutment, not hand-typed.
+      // A deck even half a metre proud of the terrain is a step that a small
+      // wheel simply cannot climb, which strands light vehicles at the
+      // entrance -- the exact opposite of the intended weight lesson.
+      const y0 = track.height(f.x), y1 = track.height(f.x + f.length);
+      for (let i = 0; i < n; i++) {
+        const x = f.x + (i + 0.5) * span;
+        const y = y0 + (y1 - y0) * ((i + 0.5) / n);
+        const body = world.createBody({ type: 'static', position: new Vec2(x, y) });
+        body.createFixture({ shape: new Box(span / 2, 0.16), friction: 0.9, density: 0 });
+        breakables.push({ kind: 'plank', body, x, half: span / 2, top: y + 0.16,
+                          limit: f.limit ?? 150, gone: false, load: 0 });
+      }
+    }
   }
 
-  return { ground, segments, props, length: track.length, track };
+  return { ground, segments, props, breakables, length: track.length, track, world };
+}
+
+/**
+ * Per-tick track logic: the scripted part of the breakable features.
+ *
+ * Deliberately scripted rather than emergent. "Too heavy" and "too tall" have
+ * to be predictable enough for a child to learn them, and a purely
+ * impulse-driven threshold is neither legible nor repeatable.
+ */
+export function updateTrack(build, dt, racer) {
+  if (!build.breakables.length || !racer) return;
+  const chassis = racer.chassis;
+  const pos = chassis.getPosition();
+  const mass = chassis.getMass() + racer.wheels.reduce((a, w) => a + w.body.getMass(), 0);
+
+  // Highest point of the hull, for the tunnel. Rotated by hand rather than via
+  // getWorldPoint so this needs no planck handle.
+  const a = chassis.getAngle(), ca = Math.cos(a), sa = Math.sin(a);
+  let top = -Infinity;
+  for (const hr of racer.hullRender) {
+    const worldY = pos.y + hr.cx * sa + hr.cy * ca;
+    top = Math.max(top, worldY + Math.max(hr.w, hr.h) / 2);
+  }
+
+  for (const b of build.breakables) {
+    if (b.gone) continue;
+    const near = Math.abs(pos.x - b.x) < b.half + 1.6;
+    if (!near) { b.load = 0; continue; }
+
+    const overloaded = b.kind === 'plank'
+      ? mass > b.limit                     // too heavy for the deck
+      : top > b.bottom + 0.04;             // too tall for the beam
+
+    if (!overloaded) { b.load = 0; continue; }
+    b.load += dt;
+    if (b.load > (b.kind === 'plank' ? 0.30 : 0.45)) {
+      build.world.destroyBody(b.body);
+      b.gone = true;
+      b.brokeAt = pos.x;
+    }
+  }
 }
 
 /** Ground height plus a little clearance, for spawning. */

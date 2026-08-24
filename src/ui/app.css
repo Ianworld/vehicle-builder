@@ -275,13 +275,14 @@ canvas { display:block; image-rendering:pixelated; }
 
 .tracks { display:flex; gap:10px; padding:0 12px 14px; overflow-x:auto; flex:none; }
 .trackChip {
-  flex:1 0 auto; min-width:250px; text-align:left; padding:10px 12px; cursor:pointer;
+  flex:1 0 auto; min-width:284px; text-align:left; padding:10px 12px; cursor:pointer;
   background:var(--panel); border:2px solid var(--line); border-radius:12px;
   color:var(--dim); font:inherit; touch-action:manipulation;
   display:flex; align-items:center; gap:12px;
 }
-.trackChip .tprofile { flex:none; display:block; line-height:0;
-                       background:#0a0d14; border-radius:8px; padding:2px; }
+.trackChip .tprofile { flex:none; display:block; line-height:0; overflow:hidden;
+                       background:#0a0d14; border-radius:8px; border:1px solid var(--line); }
+.trackChip .tprofile canvas { display:block; image-rendering:pixelated; }
 .trackChip .tmeta { display:block; min-width:0; }
 .trackChip b { display:block; color:var(--text); font-size:15px; margin-bottom:2px; }
 .trackChip .tmeta span { font-size:11.5px; }
@@ -292,5 +293,5 @@ canvas { display:block; image-rendering:pixelated; }
 @media (max-width:700px) {
   .selBody { grid-template-columns:1fr; }
   .actionBtn { width:74px; height:74px; font-size:29px; }
-  .trackChip { min-width:230px; }
+  .trackChip { min-width:262px; }
 }

@@ -57,7 +57,10 @@ export const PARTS = [
   P('jet', {
     group: 'drive', name: 'Jet', role: 'thruster', rotatable: true,
     mass: 8,
-    thrust: { force: 900 },
+    // 900N on a light frame was over 2g of thrust -- a jet sled beat every
+    // wheeled vehicle by 2-4x on every track, which drowned out any lesson the
+    // ground materials were meant to teach.
+    thrust: { force: 180 },
     // Direction the part pushes at rotation 0, in local space with Y up.
     // Rotating the part rotates this with it.
     pushDir: [1, 0],
