@@ -1,10 +1,20 @@
 # Vehicle Builder
 
-Build a vehicle out of grid parts, then race it head to head. Two screens: a
-**builder** and (coming in phase 4) a **split-screen racer**.
+Build a vehicle out of grid parts, then race two of them head to head in split
+screen. Static site, no build step, no backend.
 
-Designed for a young kid on both a touchscreen and a laptop: no fail states,
-big targets, icon-driven, undo everywhere, no typing required.
+Designed for a young kid on both a touchscreen and a laptop:
+
+- **No fail states.** Vehicles are indestructible, auto-right when flipped, and
+  every race finishes.
+- **The player cannot read yet**, so every button leads with a graphic and the
+  word is only a backup for adults. Part trays show sprites, vehicle pickers
+  show the vehicle, and each track chip draws that track's real elevation
+  profile.
+- **Leaving the builder always saves.** Both the Save button and the back arrow
+  save and return to the garage; seeing the vehicle appear there is the
+  confirmation. An empty vehicle is discarded rather than saved as junk.
+- Big touch targets, undo everywhere, no typing required.
 
 ## Run it locally
 
