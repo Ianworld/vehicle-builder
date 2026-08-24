@@ -8,11 +8,13 @@ export const CELL = 32;
 export const GRID_W = 14;
 export const GRID_H = 9;
 
+// Every group carries an icon: the player this is built for cannot read the
+// labels yet, so the picture has to do the work and the word is the backup.
 export const GROUPS = [
-  { id: 'structure', label: 'Body' },
-  { id: 'drive',     label: 'Go' },
-  { id: 'nose',      label: 'Front' },
-  { id: 'special',   label: 'Power' },
+  { id: 'structure', label: 'Body',  icon: '🧱' },
+  { id: 'drive',     label: 'Go',    icon: '🛞' },
+  { id: 'nose',      label: 'Front', icon: '🛡️' },
+  { id: 'special',   label: 'Power', icon: '⚡' },
 ];
 
 const P = (id, o) => ({ id, w: 1, h: 1, art: id, rotatable: false, ...o });

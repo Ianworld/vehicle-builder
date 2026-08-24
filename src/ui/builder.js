@@ -32,10 +32,10 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
   mount.innerHTML = `
     <div class="screen builder">
       <header class="topbar">
-        <button class="btn icon" data-act="exit" title="Back to garage">‹</button>
+        <button class="btn icon" data-act="exit" title="Back to garage">🏠</button>
         <button class="btn name" data-act="rename"><span id="vname"></span> <em>✎</em></button>
         <span class="spacer"></span>
-        <button class="btn primary" data-act="save">Save</button>
+        <button class="btn primary" data-act="save"><b class="ico">✅</b> Save</button>
       </header>
 
       <div class="stage"><canvas id="grid"></canvas>
@@ -51,7 +51,7 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
       <div class="toolbar">
         <div class="tools" id="tools"></div>
         <button class="btn icon" data-act="undo" title="Undo">↶</button>
-        <button class="btn icon" data-act="clear" title="Start over">🗑</button>
+        <button class="btn icon" data-act="clear" title="Start over">🗑️</button>
         <span class="spacer"></span>
         <button class="btn icon" data-act="zoomout">−</button>
         <button class="btn icon" data-act="fit" title="Fit">⛶</button>
@@ -74,7 +74,7 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
 
   // Tray tabs
   $('#tabs').innerHTML = GROUPS.map((g) =>
-    `<button class="tab" data-group="${g.id}">${g.label}</button>`).join('');
+    `<button class="tab" data-group="${g.id}"><b>${g.icon}</b><span>${g.label}</span></button>`).join('');
 
   function renderTray() {
     const list = $('#traylist');
@@ -321,12 +321,14 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
 
-    if (act === 'exit') onExit?.();
-    if (act === 'save') {
+    // Both routes out of the builder save first. Leaving by the back arrow used
+    // to discard everything silently, which is a fail state in a game that is
+    // supposed to have none.
+    if (act === 'exit' || act === 'save') {
+      if (!veh.parts.length) { onExit?.(); return; }   // nothing worth saving
       const res = await onSave?.(veh);
-      toast(res === 'saved' ? 'Saved!'
-        : res === 'local-only' ? 'Saved here only — export a backup'
-        : 'Save failed', res === 'saved' ? 'ok' : 'warn');
+      if (res === 'failed') { toast('Could not save — try again', 'warn'); return; }
+      onExit?.();      // seeing the vehicle land in the garage IS the confirmation
     }
     if (act === 'undo') {
       if (undoStack.length) { veh.parts = JSON.parse(undoStack.pop()); refresh(); }

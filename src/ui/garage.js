@@ -12,10 +12,10 @@ export function createGarage({ mount, onEdit, onNew, onRace }) {
       <header class="topbar">
         <h1>My Garage</h1>
         <span class="spacer"></span>
-        <button class="btn" data-act="import">Import</button>
-        <button class="btn" data-act="export">Backup</button>
-        <button class="btn" data-act="new">+ New Vehicle</button>
-        <button class="btn primary" data-act="race">Race ▸</button>
+        <button class="btn" data-act="import"><b class="ico">📥</b> Import</button>
+        <button class="btn" data-act="export"><b class="ico">📤</b> Backup</button>
+        <button class="btn" data-act="new"><b class="ico">🔨</b> New Vehicle</button>
+        <button class="btn primary" data-act="race"><b class="ico">🏁</b> Race</button>
       </header>
       <div class="storage-note" id="snote"></div>
       <div class="cards" id="cards"></div>
@@ -48,7 +48,7 @@ export function createGarage({ mount, onEdit, onNew, onRace }) {
     if (!vehicles.length) {
       host.innerHTML = `<div class="empty">
         <p>No vehicles yet.</p>
-        <button class="btn primary big" data-act="new">Build your first one</button>
+        <button class="btn primary big" data-act="new"><b class="ico">🔨</b> Build your first one</button>
         <p class="hint">Or hit <b>Race</b> to try the built-in rivals.</p>
       </div>`;
       return;
@@ -67,9 +67,9 @@ export function createGarage({ mount, onEdit, onNew, onRace }) {
           <i title="Weight"><s class="w" style="width:${(stats.weight * 100) | 0}%"></s></i>
         </div>
         <div class="crow">
-          <button class="btn" data-edit="${v.id}">Edit</button>
-          <button class="btn" data-share="${v.id}">Share</button>
-          <button class="btn danger" data-del="${v.id}">Delete</button>
+          <button class="btn" data-edit="${v.id}"><b class="ico">🔧</b> Edit</button>
+          <button class="btn" data-share="${v.id}"><b class="ico">🔗</b> Share</button>
+          <button class="btn danger" data-del="${v.id}"><b class="ico">🗑️</b> Delete</button>
         </div>`;
       card.querySelector('.thumb').appendChild(renderVehicleThumb(v, 220, 130));
       card.querySelector('.cname').textContent = v.name;

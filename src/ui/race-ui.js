@@ -17,18 +17,18 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
   mount.innerHTML = `
     <div class="screen race">
       <canvas id="rc"></canvas>
-      <button class="btn icon quit" data-act="exit" title="Back">‹</button>
+      <button class="btn icon quit" data-act="exit" title="Back">🏠</button>
       <div class="bigmsg" id="bigmsg"></div>
       ${race.lanes.map((l, i) => `
         <button class="actionBtn p${i + 1}" data-fire="${i}">
-          <span class="ring"></span><b>GO!</b>
+          <span class="ring"></span><b>⚡</b>
         </button>`).join('')}
       <div class="results" id="results" hidden>
         <h2 id="rtitle"></h2>
         <div id="rtimes"></div>
         <div class="rbtns">
-          <button class="btn primary big" data-act="again">Race again</button>
-          <button class="btn big" data-act="exit">Garage</button>
+          <button class="btn primary big" data-act="again"><b class="ico">🔄</b> Race again</button>
+          <button class="btn big" data-act="exit"><b class="ico">🏠</b> Garage</button>
         </div>
       </div>
     </div>`;
@@ -182,11 +182,16 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
     if (R.raceOver(race) && $('#results').hidden) showResults();
   }
 
+  const escapeHtml = (t) => String(t).replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
   function showResults() {
     const box = $('#results');
     box.hidden = false;
     const w = race.winner;
-    $('#rtitle').textContent = w ? `P${w.index + 1} — ${w.entry.label} wins!` : 'Race over';
+    $('#rtitle').innerHTML = w
+      ? `🏆 P${w.index + 1} — ${escapeHtml(w.entry.label)} wins!`
+      : 'Race over';
     // A trailing vehicle is still driving when the celebration window closes.
     // "Did not finish" reads as failure to a kid, so report how far they got.
     $('#rtimes').innerHTML = race.lanes.map((l, i) => {
@@ -194,7 +199,8 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
       const detail = done
         ? `${l.place === 1 ? '1st' : '2nd'} · ${l.finishTime.toFixed(1)}s`
         : `2nd · got to ${Math.round(l.racer.chassis.getPosition().x)}m of ${Math.round(race.track.length)}m`;
-      return `<div class="rrow"><b>P${i + 1}</b> ${l.entry.label} <span>${detail}</span></div>`;
+      const medal = done && l.place === 1 ? '🏆' : '🚩';
+      return `<div class="rrow"><b>P${i + 1}</b> ${medal} ${escapeHtml(l.entry.label)} <span>${detail}</span></div>`;
     }).join('');
   }
 

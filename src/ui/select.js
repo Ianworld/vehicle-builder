@@ -3,6 +3,42 @@
 import { TRACKS } from '../game/track.js';
 import { renderVehicleThumb } from './thumb.js';
 
+/** A small silhouette of a track's terrain, sampled from its height function. */
+function trackProfile(track, w, h) {
+  const cv = document.createElement('canvas');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = w * dpr; cv.height = h * dpr;
+  cv.style.width = w + 'px'; cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const N = 90;
+  const ys = [];
+  for (let i = 0; i <= N; i++) ys.push(track.height((i / N) * track.length));
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  const span = Math.max(1e-3, hi - lo);
+  const yAt = (v) => h - 4 - ((v - lo) / span) * (h - 12);
+
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  ys.forEach((v, i) => ctx.lineTo((i / N) * w, yAt(v)));
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(70,176,74,.30)';
+  ctx.fill();
+
+  ctx.beginPath();
+  ys.forEach((v, i) => (i ? ctx.lineTo((i / N) * w, yAt(v)) : ctx.moveTo(0, yAt(v))));
+  ctx.strokeStyle = '#5fce63';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // finish line
+  ctx.fillStyle = '#f4f7fc';
+  ctx.fillRect(w - 2, yAt(ys[N]) - 9, 2, 9);
+  return cv;
+}
+
 export function createSelect({ mount, vehicles, onStart, onExit }) {
   // Default to two different vehicles so the first race is never a mirror match.
   const picks = [vehicles[0], vehicles[1] || vehicles[0]];
@@ -11,19 +47,19 @@ export function createSelect({ mount, vehicles, onStart, onExit }) {
   mount.innerHTML = `
     <div class="screen select">
       <header class="topbar">
-        <button class="btn icon" data-act="exit" title="Back to garage">‹</button>
-        <h1>Race</h1>
+        <button class="btn icon" data-act="exit" title="Back to garage">🏠</button>
+        <h1>🏁 Race</h1>
         <span class="spacer"></span>
-        <button class="btn primary" data-act="start">Start Race ▸</button>
+        <button class="btn primary" data-act="start"><b class="ico">🏁</b> Start</button>
       </header>
       <div class="selBody">
         <div class="picker" data-player="0">
-          <div class="phead p1">Player 1</div>
+          <div class="phead p1"><i>1</i> Player 1</div>
           <div class="chosen" id="chosen0"></div>
           <div class="choices" id="choices0"></div>
         </div>
         <div class="picker" data-player="1">
-          <div class="phead p2">Player 2</div>
+          <div class="phead p2"><i>2</i> Player 2</div>
           <div class="chosen" id="chosen1"></div>
           <div class="choices" id="choices1"></div>
         </div>
@@ -59,10 +95,18 @@ export function createSelect({ mount, vehicles, onStart, onExit }) {
     }
   }
 
+  // Each track shows its own elevation profile, drawn from the real height
+  // function -- a picture of the course beats a name you cannot read yet.
   $('#tracks').innerHTML = TRACKS.map((t) => `
     <button class="trackChip" data-track="${t.id}">
-      <b>${t.name}</b><span>${t.blurb}</span>
+      <span class="tprofile"></span>
+      <span class="tmeta"><b>${t.name}</b><span>${t.blurb}</span></span>
     </button>`).join('');
+
+  mount.querySelectorAll('.trackChip').forEach((chip) => {
+    const track = TRACKS.find((t) => t.id === chip.dataset.track);
+    chip.querySelector('.tprofile').appendChild(trackProfile(track, 132, 40));
+  });
 
   function renderTracks() {
     mount.querySelectorAll('[data-track]').forEach((el) =>
