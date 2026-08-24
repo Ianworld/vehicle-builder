@@ -3,6 +3,7 @@
 // reused by the racer.
 
 import { PARTS, PART_BY_ID, getPart, partSize, GRID_W, GRID_H } from './parts.js';
+import { vehicleBoundsCells } from './geometry.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -213,6 +214,68 @@ export function stats(vehicle) {
     grip:   clamp01(gripRaw / 6),
     weight: clamp01(mass / 350),
   };
+}
+
+// ---------------------------------------------------------- balance / CoM
+
+/**
+ * Centre of mass and the wheel support base, in GRID CELL coordinates.
+ *
+ * Pure data -- no physics instantiation. Each part's rigid body genuinely sits
+ * at its footprint centre, so a mass-weighted centroid of the footprints lands
+ * within about a millimetre-scale of what the solver computes (measured at
+ * 7-15 mm, roughly one screen pixel). Wheels count: they are heavy and low, and
+ * leaving them out would overstate how top-heavy a vehicle is.
+ *
+ * @returns {null|{x,y,mass,left,right,ground,height,base,ratio}}
+ *   x,y      centre of mass, in cells, y increasing downward like the grid
+ *   left/right/ground  the support base: outermost wheel contacts and the
+ *                      ground line they rest on
+ *   ratio    CoM height divided by wheelbase. Low is stable; a real car is
+ *            about 0.19, and anything past ~0.75 tips over readily.
+ */
+export function centreOfMass(vehicle) {
+  if (!vehicle.parts.length) return null;
+
+  let mass = 0, sx = 0, sy = 0;
+  const contacts = [];
+  for (const p of vehicle.parts) {
+    const part = getPart(p.t);
+    if (!part) continue;
+    const { w, h } = partSize(part, p.r || 0);
+    const cx = p.x + w / 2, cy = p.y + h / 2;
+    mass += part.mass;
+    sx += part.mass * cx;
+    sy += part.mass * cy;
+
+    if (part.wheel) {
+      // A tread is one shell over two driven contact patches, at the centre of
+      // each of its cells.
+      const seats = part.role === 'tread'
+        ? [p.x + 0.5, p.x + 1.5]
+        : [cx];
+      for (const seatX of seats) contacts.push({ x: seatX, y: cy + part.wheel.radius });
+    }
+  }
+  if (mass <= 0) return null;
+
+  const com = { x: sx / mass, y: sy / mass, mass };
+  if (!contacts.length) return { ...com, left: null, right: null, ground: null, height: null, base: 0, ratio: Infinity };
+
+  const left = Math.min(...contacts.map((c) => c.x));
+  const right = Math.max(...contacts.map((c) => c.x));
+  const ground = Math.max(...contacts.map((c) => c.y));
+  const base = right - left;
+  const height = ground - com.y;          // grid y grows downward
+  return { ...com, left, right, ground, height, base, ratio: base > 0.01 ? height / base : Infinity };
+}
+
+/** Traffic-light rating for the CoM marker. No numbers -- the player can't read. */
+export function balanceRating(com) {
+  if (!com || com.base <= 0.01) return 'none';
+  if (com.ratio <= 0.5) return 'good';
+  if (com.ratio <= 0.75) return 'ok';
+  return 'bad';
 }
 
 // ----------------------------------------------------------- serialization

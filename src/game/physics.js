@@ -44,6 +44,22 @@ export function createRacer(planck, world, vehicle, spawn) {
 
 const normAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
+/**
+ * Rotational inertia about the CENTRE OF MASS.
+ *
+ * planck's getInertia() is measured about the body's local origin, which for a
+ * vehicle is its bottom-centre anchor -- 2.5x to 3.1x the true value here, and
+ * the factor varies with how tall the design is. Scaling control torque by that
+ * made corrections silently stronger on top-heavy vehicles than on low ones.
+ * The gains below are expressed as angular accelerations, so they need the real
+ * inertia to mean the same thing on every vehicle.
+ */
+function inertiaAboutCoM(body) {
+  const lc = body.getLocalCenter();
+  const I = body.getInertia() - body.getMass() * (lc.x * lc.x + lc.y * lc.y);
+  return I > 1e-6 ? I : 1;
+}
+
 /** Fire every special at once -- one button, one predictable rule. */
 export function fireAction(racer) {
   const { Vec2 } = racer.planck;
@@ -129,7 +145,7 @@ export function updateRacer(racer, dt, input = {}) {
     const av = chassis.getAngularVelocity();
     const pitch = normAngle(chassis.getAngle());
     if (av > 1.2 && pitch > 0.35) {
-      chassis.applyTorque(-(av - 1.2) * 2.0 * (chassis.getInertia() || 1), true);
+      chassis.applyTorque(-(av - 1.2) * 6.0 * inertiaAboutCoM(chassis), true);
     }
   }
 
@@ -176,9 +192,9 @@ export function updateRacer(racer, dt, input = {}) {
 
   if (racer.recoverFor > 0) {
     racer.recoverFor += dt;
-    const inertia = chassis.getInertia() || 1;
+    const inertia = inertiaAboutCoM(chassis);
     const err = normAngle(-angle);
-    chassis.applyTorque((err * 9 - chassis.getAngularVelocity() * 3.2) * inertia, true);
+    chassis.applyTorque((err * 27 - chassis.getAngularVelocity() * 9.6) * inertia, true);
     chassis.applyForceToCenter(new Vec2(0, -GRAVITY * chassis.getMass() * 0.3), true);
 
     const settled = Math.abs(angle) < 0.5 && Math.abs(chassis.getAngularVelocity()) < 1.5;

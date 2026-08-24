@@ -132,6 +132,32 @@ sprites -- at icon size a recessed panel and a mid-grey wedge both just read as
 "dark blob". The `.ico` matters: browsers request `/favicon.ico` implicitly
 whatever the `<link>` tags say.
 
+### Stability
+
+Vehicles tip because of **shape**, not because the engine models them wrongly:
+planck's rotational inertia matches an independent analytic calculation to
+0.5-3.5%. What matters is centre-of-mass height divided by wheelbase. A real
+car is about 0.19; the original starter vehicles were 0.54-0.78.
+
+The builder therefore *shows* the centre of mass -- a dot, a drop line, and a
+bar spanning the wheel contact points -- coloured green / amber / red by that
+ratio. Rather than silently lowering the CoM in code (which works, but deletes
+the reason to put the Weight block at the bottom), the player is given the
+information and can fix it themselves.
+
+One counterintuitive result worth keeping: **a longer wheelbase is not always
+more stable.** Plodder at 3.0m spanned The Gap's valley and pivoted into a
+flip; shortening it to 2.0m gave zero flips and was faster on two tracks.
+
+Rebuilding the three starters low and wide, with no physics changes at all,
+took the nine-run regression from 12 tipovers / 15 recovery assists / 36.0s
+median lap to **0 / 5 / 28.0s**.
+
+Note `getInertia()` is measured about the body ORIGIN, not the centre of mass
+-- 2.5x to 3.1x larger here, and the factor varies per design. Control torque
+must use `inertiaAboutCoM()` in `physics.js` so gains mean the same thing on
+every vehicle.
+
 ### Racing
 
 Two **independent worlds**, one per racer, each holding its own copy of the

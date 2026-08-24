@@ -5,45 +5,27 @@
   "starter": true,
   "parts": [
     {
-      "t": "light_block",
-      "x": 4,
-      "y": 5,
+      "t": "wheel_small",
+      "x": 3,
+      "y": 7,
+      "r": 0
+    },
+    {
+      "t": "wheel_small",
+      "x": 8,
+      "y": 7,
       "r": 0
     },
     {
       "t": "light_block",
-      "x": 5,
-      "y": 5,
-      "r": 0
-    },
-    {
-      "t": "light_block",
-      "x": 6,
-      "y": 5,
+      "x": 3,
+      "y": 6,
       "r": 0
     },
     {
       "t": "block",
       "x": 4,
       "y": 6,
-      "r": 0
-    },
-    {
-      "t": "block",
-      "x": 6,
-      "y": 6,
-      "r": 0
-    },
-    {
-      "t": "wheel_small",
-      "x": 4,
-      "y": 7,
-      "r": 0
-    },
-    {
-      "t": "wheel_small",
-      "x": 6,
-      "y": 7,
       "r": 0
     },
     {
@@ -53,8 +35,44 @@
       "r": 0
     },
     {
-      "t": "wedge",
+      "t": "block",
+      "x": 6,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "block",
       "x": 7,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "light_block",
+      "x": 8,
+      "y": 6,
+      "r": 0
+    },
+    {
+      "t": "light_block",
+      "x": 4,
+      "y": 5,
+      "r": 0
+    },
+    {
+      "t": "light_block",
+      "x": 5,
+      "y": 5,
+      "r": 0
+    },
+    {
+      "t": "light_block",
+      "x": 6,
+      "y": 5,
+      "r": 0
+    },
+    {
+      "t": "wedge",
+      "x": 9,
       "y": 6,
       "r": 0
     }

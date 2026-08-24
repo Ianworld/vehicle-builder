@@ -196,6 +196,8 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
       }
     });
 
+    drawBalance();
+
     // ghost of the part about to be placed
     if (hover && tool === 'build') {
       const part = getPart(held);
@@ -221,6 +223,71 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
         cam.oy + hover.y * CELL * cam.scale + 1,
         CELL * cam.scale - 2, CELL * cam.scale - 2);
     }
+  }
+
+  const RATING_COLOUR = {
+    good: '#46b04a', ok: '#ffd23e', bad: '#e0454f', none: '#8a95ab',
+  };
+
+  /**
+   * The centre of mass, and the wheel support base it has to sit over.
+   *
+   * This is the one thing that decides whether a vehicle tips, and it was
+   * previously invisible -- the physics knew, the player could not. The dot
+   * turns green as the mass gets low and the wheels get far apart, which is
+   * the whole lesson, taught without a word of text.
+   */
+  function drawBalance() {
+    const com = V.centreOfMass(veh);
+    if (!com) return;
+    const rating = V.balanceRating(com);
+    const colour = RATING_COLOUR[rating];
+    const px = (cellX) => cam.ox + cellX * CELL * cam.scale;
+    const py = (cellY) => cam.oy + cellY * CELL * cam.scale;
+    const cx = px(com.x), cy = py(com.y);
+
+    if (com.ground !== null) {
+      const gy = py(com.ground);
+      // support base: the span the mass must stay inside
+      ctx.strokeStyle = colour;
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(px(com.left), gy);
+      ctx.lineTo(px(com.right), gy);
+      ctx.stroke();
+      for (const edge of [com.left, com.right]) {
+        ctx.beginPath();
+        ctx.moveTo(px(edge), gy - 6);
+        ctx.lineTo(px(edge), gy + 6);
+        ctx.stroke();
+      }
+      // drop line, so the HEIGHT of the mass reads at a glance
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, gy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+
+    // the marker itself: dark halo first so it survives any sprite behind it
+    ctx.beginPath(); ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(8,11,18,.72)'; ctx.fill();
+
+    ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+    ctx.fillStyle = colour; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#f4f7fc'; ctx.stroke();
+
+    ctx.strokeStyle = '#0d1017';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, cy); ctx.lineTo(cx + 4, cy);
+    ctx.moveTo(cx, cy - 4); ctx.lineTo(cx, cy + 4);
+    ctx.stroke();
   }
 
   // ---------------------------------------------------------------- state
