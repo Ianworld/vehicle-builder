@@ -18,6 +18,8 @@ export function createSelect({ mount, planck, vehicles, onStart, onExit }) {
         <button class="btn primary" data-act="start"><b class="ico">🏁</b> Start</button>
       </header>
       <div class="selBody">
+        <div class="secHead"><b>🚚</b><span>Pick your vehicles</span></div>
+        <div class="pickers">
         <div class="picker" data-player="0">
           <div class="phead p1"><i>1</i> Player 1</div>
           <div class="chosen" id="chosen0"></div>
@@ -28,8 +30,12 @@ export function createSelect({ mount, planck, vehicles, onStart, onExit }) {
           <div class="chosen" id="chosen1"></div>
           <div class="choices" id="choices1"></div>
         </div>
+        </div>
       </div>
-      <div class="tracks" id="tracks"></div>
+      <div class="trackSection">
+        <div class="secHead"><b>🏁</b><span>Pick a track</span></div>
+        <div class="tracks" id="tracks"></div>
+      </div>
     </div>`;
 
   const $ = (s) => mount.querySelector(s);
