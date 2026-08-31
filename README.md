@@ -174,8 +174,8 @@ reads "Copy & Edit" on a rival and plain "Edit" on your own vehicles.
 
 ### Tracks
 
-Seven tracks. Beyond terrain shape they vary along axes that make different
-parts win:
+Seven race tracks, plus two test rigs (below). Beyond terrain shape they vary
+along axes that make different parts win:
 
 | | what it tests |
 |---|---|
@@ -212,6 +212,64 @@ time without ever ending a race — the gully under a bridge is shallow.
 Track cards on the race screen are **real renders**: each builds an actual
 world and draws it with the same `renderView` the race uses, so the picture
 cannot drift from what you will drive through.
+
+### Test rigs
+
+Two tracks that measure a vehicle rather than race it, in their own band on the
+home screen. They reuse the race machinery -- two worlds, the settle countdown,
+split screen -- because comparing two vehicles side by side is the point of a
+test as much as of a race. A track carries a `mode`, and `testmodes.js` supplies
+a controller that decides who drives and what counts as finishing.
+
+Recovery is off in both. It fires after 2.5s of no forward progress and shoves
+the vehicle along, which in a test measuring how steep a hill it can climb would
+mean the game pushing it up the hill.
+
+**Tilt Test** leans the world until the vehicle falls over, both ways, and
+reports the worse -- Plodder holds 60 degrees nose-up and gives up at 44
+nose-down, so measuring one way would rank the least stable starter as the most
+stable. It rotates *gravity* rather than the ground, since swinging a long
+static chain under a body resting on it invites jitter, and the camera leans to
+match. Three things it took to make the number mean anything:
+
+- **Chocking the wheels makes it worse.** A chock sits outboard of the tyre, so
+  the vehicle tips over the chock instead of the contact patch -- a test tower
+  read 40 degrees against a predicted 20. Locked brakes on a high-grip mat
+  (`SURFACES.griptest`) restrain it without adding a support point.
+- **Hull angle is not a tipping signal.** A tall vehicle leans several degrees
+  on its own suspension long before it is going anywhere, so a small threshold
+  reads that as a tip; a large one waits while the world keeps leaning and
+  flatters everything by 4-8 degrees.
+- What works is the physical criterion a real tilt-table uses: the vehicle is
+  left standing on its **downhill contact alone**. Note that is not "the uphill
+  wheel lifted" -- a tread is two contact patches, so Plodder has four and its
+  uphill-most lifts while three are still loaded.
+
+It agrees with the builder's static prediction within 3.2 degrees on seven of
+eight test builds. The eighth is a vehicle that topples on flat ground, which
+the static model cannot know because it ignores suspension compliance.
+
+**Slope Test** drives up a ramp steepening from flat to 75 degrees, once per
+ground material, and reports how far it got. Each stage replays the same settled
+pose translated sideways so the five numbers are comparable; the shift is
+horizontal only, which keeps every wheel joint intact. The ramp goes to 75 and
+not 60 because a run-up carries a vehicle over a 60-degree peak, out the far
+side, and onto flat ground where it scores zero.
+
+What it measures is "how steep a hill can you charge up", which needs grip and
+power together. Two purer-sounding definitions are worse: measuring where the
+vehicle *settles* reads zero on ice for everyone, because spinning wheels slide
+to the bottom, and a standing start means ice cannot get going at all. Each
+starter wins somewhere:
+
+| | ice | mud | tarmac |
+|---|---|---|---|
+| Plodder (treads) | **23.7** | 20.5 | 57.9 |
+| Spike (big wheels) | 20.9 | 20.8 | 64.5 |
+| Hopper (small wheels) | 18.7 | **35.6** | **67.8** |
+
+Treads grip; mud punishes weight, because rolling resistance scales with mass;
+hard ground is about power to weight.
 
 ### Racing
 
