@@ -37,10 +37,16 @@ export function renderTrackCard(planck, track, w, h, opts = {}) {
     const cam = makeCamera();
     cam.zoom = zoom;
     cam.groundLine = 0.62;
+    // The Tilt Test rig is a dead flat platform, which photographs as nothing
+    // at all. Leaning the card is not a cheat: the rig works by rotating
+    // gravity and leaning the camera, so this is exactly what the player sees.
+    cam.roll = track.cardRoll ?? 0;
     // project() pins the camera to 34% across the viewport; nudge so the
     // feature itself lands in the middle of the card.
     cam.x = focus - (0.5 - 0.34) * w / (PX_PER_M * zoom);
-    cam.y = track.height(focus) + 1.1;
+    // The default lifts the camera clear of hilly terrain; a flat rig wants it
+    // sitting on the deck or the ground slides off the bottom of the card.
+    cam.y = track.height(focus) + (track.cardY ?? 1.1);
 
     renderView({ ctx, vw: w, vh: h }, cam, build, []);
   } catch (err) {

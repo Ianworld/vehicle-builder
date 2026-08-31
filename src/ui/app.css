@@ -334,3 +334,21 @@ canvas { display:block; image-rendering:pixelated; }
    because a wedge cannot stretch the way a meter bar can. */
 .meter.tilt { flex:none; }
 .meter.tilt canvas { display:block; flex:none; }
+
+/* Test-rig results: a protractor or a row of ground-coloured bars, so the
+   comparison between the two players is a shape rather than a number. */
+.rrow.trow { align-items:center; gap:10px; }
+.rrow .tname { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.tres { display:flex; align-items:center; gap:8px; }
+.tres canvas { display:block; }
+.tmedal { font-size:22px; }
+.tbars { display:flex; align-items:flex-end; gap:5px; height:78px;
+         padding-bottom:3px; border-bottom:2px solid var(--line); }
+.tbar { position:relative; width:21px; height:100%; border-radius:3px;
+        overflow:hidden; outline:1px solid #12141c; }
+.tbar i { position:absolute; left:0; right:0; bottom:0; display:block; }
+
+/* The test rigs get their own band. They are not races, and dropping them into
+   the race list would quietly change what the Start button means. */
+.testSection { border-top:1px solid var(--line); }
+.testSection .secHead b { filter:hue-rotate(-25deg); }

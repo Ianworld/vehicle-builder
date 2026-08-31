@@ -1,6 +1,6 @@
 // Race setup: pick a vehicle for each player, pick a track, go.
 
-import { TRACKS } from '../game/track.js';
+import { TRACKS, TESTS, ALL_TRACKS } from '../game/track.js';
 import { renderVehicleThumb } from './thumb.js';
 import { renderTrackCard } from './trackcard.js';
 
@@ -22,7 +22,7 @@ export function createSelect({ mount, planck, vehicles, initial, onStart, onGara
     byId(initial?.pickIds?.[0]) || vehicles[0],
     byId(initial?.pickIds?.[1]) || vehicles[1] || vehicles[0],
   ];
-  let trackId = TRACKS.some((t) => t.id === initial?.trackId) ? initial.trackId : TRACKS[0].id;
+  let trackId = ALL_TRACKS.some((t) => t.id === initial?.trackId) ? initial.trackId : TRACKS[0].id;
   const state = () => ({ pickIds: picks.map((v) => v && v.id), trackId });
 
   mount.innerHTML = `
@@ -57,6 +57,10 @@ export function createSelect({ mount, planck, vehicles, initial, onStart, onGara
       <div class="trackSection">
         <div class="secHead"><b>🏁</b><span>Pick a track</span></div>
         <div class="tracks" id="tracks"></div>
+      </div>
+      <div class="trackSection testSection">
+        <div class="secHead"><b>🔬</b><span>Or test your vehicle</span></div>
+        <div class="tracks" id="tests"></div>
       </div>
     </div>`;
 
@@ -100,14 +104,18 @@ export function createSelect({ mount, planck, vehicles, initial, onStart, onGara
 
   // Each track shows a real render of its most interesting stretch, built from
   // the actual world -- a picture of the thing beats a name you cannot read.
-  $('#tracks').innerHTML = TRACKS.map((t) => `
+  const chipHtml = (t) => `
     <button class="trackChip" data-track="${t.id}">
       <span class="tprofile"></span>
       <span class="tmeta"><b>${t.name}</b><span>${t.blurb}</span></span>
-    </button>`).join('');
+    </button>`;
+  $('#tracks').innerHTML = TRACKS.map(chipHtml).join('');
+  // The test rigs are not races and must not sit in the race list, but they
+  // are still tracks, so they get exactly the same real-render card.
+  $('#tests').innerHTML = TESTS.map(chipHtml).join('');
 
   mount.querySelectorAll('.trackChip').forEach((chip) => {
-    const track = TRACKS.find((t) => t.id === chip.dataset.track);
+    const track = ALL_TRACKS.find((t) => t.id === chip.dataset.track);
     chip.querySelector('.tprofile').appendChild(renderTrackCard(planck, track, 150, 78));
   });
 

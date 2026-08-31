@@ -323,7 +323,7 @@ export const TESTS = [
     seed: 101,
     length: 26,
     spawnX: 8,
-    showcase: 8, cardZoom: 0.55,
+    showcase: 8, cardZoom: 0.30, cardRoll: -24 * Math.PI / 180, cardY: 0.1,
     // Dead flat. The world does not bend -- gravity turns instead, and the
     // camera leans to match, which is stabler than swinging the ground.
     height: () => 0,

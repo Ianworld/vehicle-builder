@@ -6,7 +6,10 @@
 
 import * as R from '../game/race.js';
 import { renderView, makeCamera } from './render.js';
-import { M } from '../game/build.js';
+import { drawTiltGauge, fitCanvas, RATING_COLOUR } from './gauge.js';
+import { tiltRating } from '../game/tilt.js';
+import { TILT_MAX } from '../game/testmodes.js';
+import { SURFACES } from '../game/track.js';
 
 const KEYS = [['a', 'shift'], ['l', ' ']];   // P1, P2
 
@@ -57,6 +60,46 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
   };
 
   // -------------------------------------------------------------- rendering
+  /** Live angle readout, shared by both test rigs. */
+  function drawTestHud(pane, lane, pad) {
+    const h = lane.test.hud();
+    const gw = 62, gh = 54;
+    ctx.save();
+    ctx.translate(pad, pad + 30);
+    ctx.fillStyle = 'rgba(10,14,22,.62)';
+    ctx.fillRect(-3, -3, gw + 6, gh + 6);
+    drawTiltGauge(ctx, gw, gh, {
+      angle: h.angle,
+      max: lane.test.kind === 'tilt' ? TILT_MAX : Math.PI / 2,
+      rating: tiltRating(h.angle),
+      best: lane.test.kind === 'tilt' ? h.best : 0,
+    });
+    ctx.restore();
+
+    // Which ground it is on, and how it did on the ones already done. The
+    // swatch colours are the terrain's own, so the row reads against the
+    // hillside the player just watched rather than needing a key.
+    if (lane.test.kind === 'slope') {
+      const sw = 15, gap = 4;
+      h.surfaces.forEach((id, k) => {
+        const x = pad + k * (sw + gap), y = pad + 30 + gh + 8;
+        const got = h.got[k];
+        ctx.fillStyle = 'rgba(10,14,22,.62)';
+        ctx.fillRect(x - 1, y - 1, sw + 2, 24);
+        ctx.fillStyle = SURFACES[id].fill;
+        ctx.fillRect(x, y, sw, 22);
+        if (got !== undefined) {
+          const frac = Math.max(0.06, Math.min(1, got / (Math.PI / 2)));
+          ctx.fillStyle = SURFACES[id].cap;
+          ctx.fillRect(x, y + 22 - 22 * frac, sw, 22 * frac);
+        }
+        ctx.strokeStyle = k === h.stage ? '#f4f7fc' : '#12141c';
+        ctx.lineWidth = k === h.stage ? 2 : 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, sw - 1, 21);
+      });
+    }
+  }
+
   function drawPaneHud(pane, lane, i) {
     const label = lane.entry.label;
     const prog = R.laneProgress(race, lane);
@@ -74,6 +117,8 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
     ctx.fillText(`P${i + 1}`, pad + 8, pad + 17);
     ctx.fillStyle = '#e4eaf5';
     ctx.fillText(label, pad + 34, pad + 17);
+
+    if (lane.test) { drawTestHud(pane, lane, pad); ctx.restore(); return; }
 
     // progress rail
     const railW = pane.w - pad * 2, railY = pad + 32;
@@ -108,8 +153,12 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
     race.lanes.forEach((lane, i) => {
       const pane = paneRect(i);
       const pos = lane.racer.chassis.getPosition();
+      // The Slope Test moves the vehicle bodily to the next stage; easing
+      // across 40 metres would spend seconds looking at empty hillside.
+      if (Math.abs(pos.x - cams[i].x) > 12) { cams[i].x = pos.x; cams[i].y = pos.y; }
       cams[i].x += (pos.x - cams[i].x) * 0.14;
       cams[i].y += (pos.y - cams[i].y) * 0.09;
+      cams[i].roll = lane.test ? lane.test.roll() : 0;
       // Narrow panes need to pull back or you cannot see what is coming.
       cams[i].zoom = Math.max(0.55, Math.min(1, pane.w / 620));
 
@@ -173,6 +222,8 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
 
     race.lanes.forEach((lane, i) => {
       const btn = mount.querySelector(`[data-fire="${i}"]`);
+      // Nothing to fire on a test rig, and a dead button is worse than none.
+      if (race.mode) { btn.hidden = true; return; }
       const has = lane.racer.specials.length > 0;
       btn.classList.toggle('ready', has && R.actionReady(lane));
       btn.classList.toggle('none', !has);
@@ -185,9 +236,72 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
   const escapeHtml = (t) => String(t).replace(/[&<>"]/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  /**
+   * Test results as pictures, not numbers.
+   *
+   * A protractor standing at the angle it fell over at, or one bar per ground
+   * material in that ground's own colour. Neither needs reading, and the shape
+   * of the two rows side by side is the comparison.
+   */
+  function testResultRow(lane) {
+    const res = lane.test.result();
+    const wrap = document.createElement('div');
+    wrap.className = 'tres';
+
+    if (res.kind === 'tilt') {
+      const cv = document.createElement('canvas');
+      const c = fitCanvas(cv, 96, 82);
+      drawTiltGauge(c, 96, 82, {
+        angle: res.angle, max: TILT_MAX, rating: tiltRating(res.angle),
+      });
+      wrap.appendChild(cv);
+      const medal = document.createElement('b');
+      medal.className = 'tmedal';
+      medal.textContent = res.angle >= Math.atan(1.0) ? '🥇'
+        : res.angle >= Math.atan(2 / 3) ? '🥈' : '🥉';
+      wrap.appendChild(medal);
+    } else {
+      const bars = document.createElement('div');
+      bars.className = 'tbars';
+      for (const b of res.bars) {
+        const col = document.createElement('span');
+        col.className = 'tbar';
+        col.style.background = SURFACES[b.surface].fill;
+        const fill = document.createElement('i');
+        fill.style.background = SURFACES[b.surface].cap;
+        fill.style.height = Math.max(6, Math.min(100, (b.angle / (Math.PI / 2)) * 100)) + '%';
+        col.appendChild(fill);
+        bars.appendChild(col);
+      }
+      wrap.appendChild(bars);
+    }
+    return wrap;
+  }
+
+  function showTestResults() {
+    const w = race.winner;
+    $('#rtitle').innerHTML = w
+      ? `🏆 P${w.index + 1} — ${escapeHtml(w.entry.label)}`
+      : '🤝 Dead heat';
+    const host = $('#rtimes');
+    host.innerHTML = '';
+    race.lanes.forEach((l, i) => {
+      const row = document.createElement('div');
+      row.className = 'rrow trow';
+      const who = document.createElement('b');
+      who.textContent = `P${i + 1}`;
+      const name = document.createElement('span');
+      name.className = 'tname';
+      name.textContent = l.entry.label;
+      row.append(who, name, testResultRow(l));
+      host.appendChild(row);
+    });
+  }
+
   function showResults() {
     const box = $('#results');
     box.hidden = false;
+    if (race.mode) { showTestResults(); return; }
     const w = race.winner;
     $('#rtitle').innerHTML = w
       ? `🏆 P${w.index + 1} — ${escapeHtml(w.entry.label)} wins!`
