@@ -4,6 +4,8 @@
 // track must be perfectly reproducible -- hence a seeded PRNG rather than
 // Math.random anywhere in here.
 
+import { setFixtureMass } from './build.js';
+
 const SAMPLE = 0.25;       // metres between terrain samples
 const START_FLAT = 7;      // flat run-up so nobody spawns on a slope
 const LEAD_IN = -12;
@@ -109,6 +111,24 @@ function ledge(x, at, h, ramp) {
   if (x < at + ramp) return h * (x - at) / ramp;
   if (x < at + ramp + plateau) return h;
   return h * (1 - (x - at - ramp - plateau) / ramp);
+}
+
+/**
+ * Flatten the terrain across a span, easing back to normal either side.
+ *
+ * Multiplied into height(). A seesaw needs level ground under it -- a plank
+ * that swings 9 degrees sitting on a hillside is unpredictable, and which way
+ * it starts would depend on the slope rather than on the design.
+ */
+function flatten(x, spans, blend = 3) {
+  let k = 1;
+  for (const [a, b] of spans) {
+    if (x <= a - blend || x >= b + blend) continue;
+    const t = x < a ? (a - x) / blend : x > b ? (x - b) / blend : 0;
+    const u = Math.max(0, Math.min(1, t));
+    k = Math.min(k, u * u * (3 - 2 * u));
+  }
+  return k;
 }
 
 /**
@@ -308,6 +328,47 @@ export const TRACKS = [
       { kind: 'wind', x: 100, length: 40, strength: 1.10, dir: -1, gust: 0.28 },
     ],
   },
+
+  {
+    id: 'seesaw',
+    name: 'Tipping Point',
+    blurb: 'Planks on pivots. Heavy ones tip them early.',
+    showcase: 88, cardZoom: 0.34,
+    seed: 5115,
+    length: 155,
+    // Level pads under each plank, because a seesaw on a slope is a coin toss.
+    height: (x) => easeIn(x) * flatten(x, [[42, 55], [82, 95], [120, 133]]) * (
+      0.80 * Math.sin(x * 0.062) +
+      0.34 * Math.sin(x * 0.2 + 0.7)),
+    holes: [],
+    props: () => [],
+    // Three planks of the same shape and increasing weight.
+    //
+    // The obvious design -- one plank, and a restoring torque that decides HOW
+    // FAR PAST THE PIVOT you must be -- does not survive contact with a moving
+    // vehicle. Spike crosses a 2m arm in under a third of a second, and no
+    // plank with believable inertia rotates far in that time, so what got
+    // measured was speed, not weight: Plodder tipped every plank and the two
+    // faster starters skimmed over untouched.
+    //
+    // A long arm and a small offset fixes it, because then dwell time is long
+    // enough for weight to be what decides. What varies now is HOW FAR it goes
+    // over, which is just as visible side by side and is still force times
+    // distance. Measured peak swing:
+    //
+    //            50kg    65kg    85kg
+    //   Plodder   8.8     8.8     8.9
+    //   Spike     8.9     8.6     8.7
+    //   Hopper    8.0     5.1     3.0
+    //
+    // so the light starter progressively runs out of authority while the heavy
+    // ones sail through, and nothing ever gets stuck.
+    features: [
+      { kind: 'seesaw', x: 48, length: 7, mass: 50, offset: 0.30, friction: 20, limit: 0.26 },
+      { kind: 'seesaw', x: 88, length: 7, mass: 65, offset: 0.30, friction: 20, limit: 0.26 },
+      { kind: 'seesaw', x: 126, length: 7, mass: 85, offset: 0.30, friction: 20, limit: 0.26 },
+    ],
+  },
 ];
 
 // Searches the test rigs too. Falling back to Rolling Hills for an unknown id
@@ -471,7 +532,8 @@ export function buildTrack(planck, world, track) {
   // --- features ------------------------------------------------------------
   const breakables = [];      // scripted-destructible: beams and planks
   const winds = [];           // wind zones and their markers, for the renderer
-  const ctx = { planck, world, track, ground, r, breakables, winds, addProp };
+  const seesaws = [];         // dynamic planks on pivots
+  const ctx = { planck, world, track, ground, r, breakables, winds, seesaws, addProp };
 
   for (const f of track.features || []) {
     const build = FEATURE_BUILDERS[f.kind];
@@ -479,7 +541,8 @@ export function buildTrack(planck, world, track) {
     build(ctx, f);
   }
 
-  return { ground, segments, props, breakables, winds, length: track.length, track, world };
+  return { ground, segments, props, breakables, winds, seesaws,
+           length: track.length, track, world };
 }
 
 /**
@@ -564,6 +627,70 @@ const FEATURE_BUILDERS = {
       winds.push({ kind: 'sock', x, base: track.height(x) });
     }
     winds.push({ kind: 'zone', x0: f.x, x1: f.x + f.length, dir: f.dir ?? -1 });
+  },
+
+  /**
+   * A plank on a real pivot -- the first DYNAMIC joint in a track.
+   *
+   * Everything else breakable here is scripted, because "too heavy" and "too
+   * tall" have to be predictable. The seesaw is the one place where emergent
+   * beats scripted: "further out tips it further" is continuous and visible,
+   * where a rule would be a cliff edge nobody can see coming.
+   */
+  seesaw(ctx, f) {
+    const { planck, world, track, winds } = ctx;
+    const { Vec2, Polygon, RevoluteJoint } = planck;
+    void winds;
+
+    const half = (f.length ?? 5) / 2;
+    const off = f.offset ?? 0.5;
+    const px = f.x, py = track.height(f.x) + (f.pivotHeight ?? 0.42);
+
+    // Fulcrum: a static wedge under the pivot.
+    const fulcrum = world.createBody({ type: 'static', position: new Vec2(px, py) });
+    fulcrum.createFixture({
+      shape: new Polygon([new Vec2(-0.55, -(f.pivotHeight ?? 0.42)),
+                          new Vec2(0.55, -(f.pivotHeight ?? 0.42)), new Vec2(0, 0.06)]),
+      friction: 0.6, density: 0,
+    });
+
+    // The plank, tapered to a drivable lip. Same reasoning as the plow: a blunt
+    // end is a step a small wheel cannot climb, and a knife edge catches on the
+    // ground. The polygon is offset so the body ORIGIN is the pivot, which puts
+    // the plank's mass `off` metres to the entry side and gives it a restoring
+    // torque of mass * g * off -- without that offset a uniform plank pivoted at
+    // its own centre has no restoring torque at any angle and simply stays
+    // wherever the last vehicle left it.
+    const T0 = 0.18, T1 = 0.03, lip = 0.5;
+    const vx = (v) => v - off;
+    const plank = world.createBody({
+      type: 'dynamic', position: new Vec2(px, py), angularDamping: 0.4,
+    });
+    const fx = plank.createFixture({
+      shape: new Polygon([
+        new Vec2(vx(-half), -T1), new Vec2(vx(-half + lip), -T0),
+        new Vec2(vx(half - lip), -T0), new Vec2(vx(half), -T1),
+        new Vec2(vx(half), T1), new Vec2(vx(half - lip), T0),
+        new Vec2(vx(-half + lip), T0), new Vec2(vx(-half), T1),
+      ]),
+      density: 1, friction: 0.85, restitution: 0.02,
+    });
+    setFixtureMass(planck, fx, f.mass ?? 120);
+    plank.resetMassData();
+
+    const lim = f.limit ?? 0.2;
+    world.createJoint(new RevoluteJoint({
+      // The limit must sit PAST the angle at which the plank end reaches the
+      // ground, so the ground stops it, not the constraint. A 120kg plank and a
+      // 200kg vehicle hitting a rigid joint stop at 3 m/s launches the rider.
+      enableLimit: true, lowerAngle: -lim, upperAngle: lim,
+      // Motor at zero speed is pivot friction: it bleeds the swing so the plank
+      // does not flap after the vehicle leaves, and adds a small deadband.
+      enableMotor: true, motorSpeed: 0, maxMotorTorque: f.friction ?? 90,
+    }, plank, fulcrum, new Vec2(px, py)));
+
+    ctx.seesaws.push({ body: plank, fulcrum, x: px, y: py, half, off,
+                       t0: T0, t1: T1, lip, stand: f.pivotHeight ?? 0.42 });
   },
 
   bridge(ctx, f) {

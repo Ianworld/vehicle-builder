@@ -244,6 +244,74 @@ function drawWind(ctx, p, vw, vh, build, tMs) {
   }
 }
 
+/**
+ * Seesaws: a static wedge and a plank that actually rotates.
+ *
+ * drawProps already rotates bodies, so the machinery exists -- breakables skip
+ * it only because static beams and planks are axis-aligned.
+ */
+function drawSeesaws(ctx, p, build) {
+  for (const s of build.seesaws || []) {
+    const px = p.sx(s.x), py = p.sy(s.y);
+    if (px < -200 || px > 1e5) continue;
+    const k = p.s;
+
+    // Fulcrum first, so the plank sits over it.
+    const h = s.stand * k;
+    ctx.beginPath();
+    ctx.moveTo(px - 0.55 * k, py + h);
+    ctx.lineTo(px + 0.55 * k, py + h);
+    ctx.lineTo(px, py - 0.06 * k);
+    ctx.closePath();
+    ctx.fillStyle = '#68738d';
+    ctx.fill();
+    ctx.strokeStyle = '#12141c';
+    ctx.lineWidth = Math.max(1, 2 * cam0(p));
+    ctx.stroke();
+
+    const a = s.body.getAngle();
+    const q = s.body.getPosition();
+    ctx.save();
+    ctx.translate(p.sx(q.x), p.sy(q.y));
+    ctx.rotate(-a);
+    const vx = (v) => (v - s.off) * k;
+    ctx.beginPath();
+    ctx.moveTo(vx(-s.half), s.t1 * k);
+    ctx.lineTo(vx(-s.half + s.lip), s.t0 * k);
+    ctx.lineTo(vx(s.half - s.lip), s.t0 * k);
+    ctx.lineTo(vx(s.half), s.t1 * k);
+    ctx.lineTo(vx(s.half), -s.t1 * k);
+    ctx.lineTo(vx(s.half - s.lip), -s.t0 * k);
+    ctx.lineTo(vx(-s.half + s.lip), -s.t0 * k);
+    ctx.lineTo(vx(-s.half), -s.t1 * k);
+    ctx.closePath();
+    ctx.fillStyle = '#8a5a2a';
+    ctx.fill();
+    ctx.strokeStyle = '#12141c';
+    ctx.lineWidth = Math.max(1, 2 * cam0(p));
+    ctx.stroke();
+
+    // Cross-grain, and a stripe at each end. A non-reader's eye needs something
+    // to track as the plank swings, and yellow is already this game's "watch
+    // out" colour on the tunnel beams.
+    ctx.strokeStyle = '#5a3a1a';
+    ctx.lineWidth = Math.max(1, 1.4 * cam0(p));
+    for (let i = -2; i <= 2; i++) {
+      const gx = vx(i * s.half * 0.4);
+      ctx.beginPath();
+      ctx.moveTo(gx, -s.t0 * k * 0.8);
+      ctx.lineTo(gx, s.t0 * k * 0.8);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#ffd23e';
+    for (const end of [-1, 1]) {
+      const ex = vx(end * (s.half - s.lip * 0.5));
+      ctx.fillRect(ex - 0.09 * k, -s.t0 * k * 0.85, 0.18 * k, s.t0 * k * 1.7);
+    }
+    ctx.restore();
+  }
+}
+
 function blit(ctx, sprite, p, wx, wy, angle, wMeters, hMeters) {
   const img = spriteCanvas(sprite.art, sprite.rot, 1);
   ctx.save();
@@ -543,6 +611,7 @@ export function renderView({ ctx, vw, vh }, cam, trackBuild, racers) {
   drawProps(ctx, p, trackBuild.props);
   drawBreakables(ctx, p, trackBuild);
   drawWind(ctx, p, vw, vh, trackBuild, performance.now());
+  drawSeesaws(ctx, p, trackBuild);
   for (const r of racers) drawRacer(ctx, p, r);
 
   ctx.restore();
