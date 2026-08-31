@@ -229,7 +229,7 @@ function makeWheel(planck, world, chassis, part, spawn, localX, localY, kg) {
   }, chassis, body, body.getPosition(), new Vec2(0, 1)));
 
   return {
-    body, joint, part,
+    body, joint, part, radius,
     baseFriction: part.wheel.friction,
     maxSpeed: part.wheel.motorSpeed,
     fixture: fx,

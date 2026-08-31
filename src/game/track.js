@@ -35,6 +35,11 @@ export const SURFACES = {
   ice:    { id: 'ice',    grip: 0.07, roll: 0.00, fill: '#26414f', cap: '#a8e4ff' },
   mud:    { id: 'mud',    grip: 0.72, roll: 0.60, fill: '#33291d', cap: '#7a5c34' },
   sand:   { id: 'sand',   grip: 0.62, roll: 0.26, fill: '#4a4028', cap: '#d9c07a' },
+  // Test-rig only: a rubber mat, so the Tilt Test measures BALANCE and not
+  // friction. grip scales the wheel and the ground, so 2.2 puts the effective
+  // coefficient around 2.2 -- a vehicle would have to reach 66 degrees before
+  // it slid, which is past the 60-degree cap. Never put this on a race track.
+  griptest: { id: 'griptest', grip: 2.20, roll: 0.00, fill: '#241f2b', cap: '#6b5a7a' },
 };
 
 /** Material under a given point. Tracks list only their exceptions. */
@@ -43,6 +48,16 @@ export function surfaceAt(track, x) {
     if (x >= band[0] && x < band[1]) return SURFACES[band[2]] || SURFACES.dirt;
   }
   return SURFACES.dirt;
+}
+
+/**
+ * Local uphill angle of the terrain at x, in radians.
+ *
+ * Finite difference rather than an analytic derivative, so it works for any
+ * height() a track cares to define. Positive means climbing.
+ */
+export function slopeAt(track, x, h = 0.2) {
+  return Math.atan2(track.height(x + h) - track.height(x - h), 2 * h);
 }
 
 /** Fade terrain in over the first few metres so the start is always flat. */
@@ -245,7 +260,101 @@ export const TRACKS = [
   },
 ];
 
-export const getTrack = (id) => TRACKS.find((t) => t.id === id) || TRACKS[0];
+// Searches the test rigs too. Falling back to Rolling Hills for an unknown id
+// keeps a bad share link from crashing, but it must not swallow a real track:
+// before ALL_TRACKS existed, getTrack('tilt-test') silently returned a race.
+export const getTrack = (id) => ALL_TRACKS.find((t) => t.id === id) || TRACKS[0];
+
+// ---------------------------------------------------------------- test rigs
+//
+// Tracks with a `mode`, driven by a scripted controller in testmodes.js rather
+// than by "drive right until the finish line". They are not races and are
+// picked from their own section of the home screen.
+
+/** Ice first so the easiest lesson lands first, tarmac last. */
+const SLOPE_SURFACES = ['ice', 'sand', 'mud', 'dirt', 'tarmac'];
+// A proper run-up, identical for every stage and every vehicle.
+//
+// Starting from a standstill at the foot sounds purer and is worse: on ice a
+// vehicle cannot get going at all and every build scores near zero, so the
+// surface that should teach the most teaches nothing. With a run-up the
+// question becomes "how steep a hill can you charge up", which still needs
+// both grip and power and separates the builds cleanly.
+const SLOPE_APRON = 9;
+const SLOPE_RAMP = 14;                      // ramp length: 0 deg to SLOPE_TOP
+// 75 degrees, not 60. A vehicle carries momentum from the run-up and can crest
+// a ramp several degrees steeper than it could hold: Hopper climbed clean over
+// a 60-degree peak, ran out the far side and scored zero because it finished on
+// the flat. Nothing gets over 75, so the ramp always wins in the end.
+const SLOPE_TOP = 75 * Math.PI / 180;
+const SLOPE_TAIL = 6;
+const SLOPE_STAGE = SLOPE_APRON + SLOPE_RAMP * 2 + SLOPE_TAIL;
+
+/**
+ * Height of a ramp whose ANGLE grows linearly from 0 to SLOPE_TOP.
+ *
+ * Integrating tan gives -ln(cos)/k, which is what makes the steepening smooth:
+ * a vehicle meets every angle on the way up and stops at the first one it
+ * cannot hold, instead of hitting one fixed gradient and either making it or
+ * not.
+ */
+const rampRise = (s) => {
+  const k = SLOPE_TOP / SLOPE_RAMP;
+  return -Math.log(Math.cos(k * Math.max(0, Math.min(SLOPE_RAMP, s)))) / k;
+};
+
+function slopeHeight(x) {
+  if (x <= 0) return 0;
+  const stage = Math.floor(x / SLOPE_STAGE);
+  if (stage >= SLOPE_SURFACES.length) return 0;
+  const s = x - stage * SLOPE_STAGE - SLOPE_APRON;
+  if (s <= 0) return 0;                                   // apron
+  if (s <= SLOPE_RAMP) return rampRise(s);                // the climb
+  if (s <= SLOPE_RAMP * 2) return rampRise(SLOPE_RAMP * 2 - s);   // mirrored descent
+  return 0;                                               // tail
+}
+
+export const TESTS = [
+  {
+    id: 'tilt-test',
+    name: 'Tilt Test',
+    blurb: 'The ground leans over. Who falls first?',
+    mode: 'tilt',
+    seed: 101,
+    length: 26,
+    spawnX: 8,
+    showcase: 8, cardZoom: 0.55,
+    // Dead flat. The world does not bend -- gravity turns instead, and the
+    // camera leans to match, which is stabler than swinging the ground.
+    height: () => 0,
+    surfaces: [[-40, 80, 'griptest']],
+    holes: [],
+    props: () => [],
+  },
+  {
+    id: 'slope-test',
+    name: 'Slope Test',
+    blurb: 'How steep a hill, on five different grounds?',
+    mode: 'slope',
+    seed: 202,
+    length: SLOPE_STAGE * SLOPE_SURFACES.length,
+    spawnX: 3,
+    showcase: SLOPE_APRON + SLOPE_RAMP * 0.7, cardZoom: 0.30,
+    height: slopeHeight,
+    surfaces: SLOPE_SURFACES.map((id, i) =>
+      [i * SLOPE_STAGE, (i + 1) * SLOPE_STAGE, id]),
+    stages: SLOPE_SURFACES.map((surface, i) => ({
+      surface,
+      startX: i * SLOPE_STAGE + 3,
+      startY: 0,
+      rampX: i * SLOPE_STAGE + SLOPE_APRON,
+    })),
+    holes: [],
+    props: () => [],
+  },
+];
+
+export const ALL_TRACKS = [...TRACKS, ...TESTS];
 
 const inHole = (track, x) => track.holes.some(([a, b]) => x > a && x < b);
 
