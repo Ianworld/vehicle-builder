@@ -223,8 +223,19 @@ export function updateRacer(racer, dt, input = {}) {
 
   const flipGrace = speed < 1.6 ? FLIP_GRACE : FLIP_GRACE_MOVING;
 
-  if (racer.recoverFor === 0 &&
-      (racer.stalledFor > STALL_GRACE || racer.invertedFor > flipGrace)) {
+  // How much the game is allowed to help.
+  //
+  //   'full' (races)  both triggers -- the "never stuck" promise.
+  //   'flip'          right it if it lands on its roof, but never shove it
+  //                   along for standing still.
+  //   'off'  (tests)  none. A test that measures how steep a hill a vehicle
+  //                   can climb CANNOT have the game pushing it up the hill
+  //                   every 2.5 seconds; stalling IS the measurement.
+  const assist = input.assist ?? 'full';
+  const stalled = assist === 'full' && racer.stalledFor > STALL_GRACE;
+  const flipped = assist !== 'off' && racer.invertedFor > flipGrace;
+
+  if (racer.recoverFor === 0 && (stalled || flipped)) {
     racer.recoverFor = 1e-4;
     racer.recoveries++;
     // A one-shot hop. Righting alone does nothing for a hull wedged against a

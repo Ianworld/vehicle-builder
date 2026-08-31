@@ -63,8 +63,8 @@ export function stepRace(race, dt) {
     // dropping the instant the race starts.
     for (const lane of race.lanes) {
       updateRacer(lane.racer, dt, { throttle: 0 });
-      lane.world.step(dt);
       updateTrack(lane.build, dt, lane.racer);
+      lane.world.step(dt);
     }
     if (race.countdown <= 0) race.phase = 'racing';
     return;
@@ -74,9 +74,12 @@ export function stepRace(race, dt) {
 
   for (const lane of race.lanes) {
     const finished = lane.finishTime !== null;
+    // Track forces (buoyancy, and anything else that pushes on a body) have to
+    // land BEFORE the solver runs, or they are a frame stale. Destroying a
+    // breakable is legal either way.
     updateRacer(lane.racer, dt, { throttle: finished ? 0 : 1 });
-    lane.world.step(dt);
     updateTrack(lane.build, dt, lane.racer);
+    lane.world.step(dt);
 
     if (!finished && lane.racer.chassis.getPosition().x >= race.track.length) {
       lane.finishTime = race.elapsed;

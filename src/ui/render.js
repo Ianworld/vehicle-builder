@@ -10,7 +10,10 @@ import { CELL } from '../game/parts.js';
 export const PX_PER_M = CELL / M;   // 64
 
 export function makeCamera() {
-  return { x: 0, y: 0, zoom: 1, groundLine: 0.68 };
+  // roll tilts the whole view. The Tilt Test rotates GRAVITY rather than the
+  // ground -- rotating a long static chain under a resting body invites jitter
+  // -- so the camera has to lean the other way to sell it as a rising ramp.
+  return { x: 0, y: 0, zoom: 1, groundLine: 0.68, roll: 0 };
 }
 
 /** World -> screen, for a camera drawn into a viewport of w x h css px. */
@@ -269,6 +272,15 @@ export function renderView({ ctx, vw, vh }, cam, trackBuild, racers) {
   ctx.imageSmoothingEnabled = false;
 
   drawSky(ctx, vw, vh);
+
+  // The sky stays put and everything else leans, which is what makes a tilted
+  // world read as a slope rather than as a wonky camera.
+  if (cam.roll) {
+    ctx.translate(vw * (cam.anchor ?? 0.34), vh * cam.groundLine);
+    ctx.rotate(cam.roll);
+    ctx.translate(-vw * (cam.anchor ?? 0.34), -vh * cam.groundLine);
+  }
+
   const p = project(cam, vw, vh);
   drawTerrain(ctx, p, vw, vh, trackBuild);
   drawFinish(ctx, p, trackBuild.length, vh);

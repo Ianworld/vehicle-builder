@@ -59,6 +59,9 @@ function reset() {
   build = TR.buildTrack(planck, world, track);
   const spawn = TR.spawnPoint(track, 3);
   racer = PH.createRacer(planck, world, vehicles[document.getElementById('veh').value], spawn);
+  // Without this the wheels never sample a surface, so every track behaves like
+  // dirt and any tuning done here is measuring the wrong world entirely.
+  racer.track = track;
   if (upside) {
     racer.chassis.setAngle(Math.PI);
     racer.chassis.setPosition(new planck.Vec2(spawn.x, spawn.y + 1.2));
@@ -86,6 +89,7 @@ function frame(now) {
   const dt = 1 / 60;
   while (acc >= dt) {
     PH.updateRacer(racer, dt, { throttle: 1 });
+    TR.updateTrack(build, dt, racer);
     world.step(dt);
     acc -= dt; t += dt;
   }
@@ -123,7 +127,11 @@ document.getElementById('tip').onclick = (e) => { upside = !upside; e.target.cla
 addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); PH.fireAction(racer); } });
 window.__t = () => ({ x: +racer.chassis.getPosition().x.toFixed(2), t: +t.toFixed(2),
   assists: racer.recoveries, angle: +(racer.chassis.getAngle() * 57.3).toFixed(0),
-  recovering: racer.recoverFor > 0, vx: +racer.chassis.getLinearVelocity().x.toFixed(2) });
+  recovering: racer.recoverFor > 0, vx: +racer.chassis.getLinearVelocity().x.toFixed(2),
+  // Reported so it is obvious at a glance whether ground materials are being
+  // applied at all -- they silently were not, for a long time.
+  surface: racer.surface ? racer.surface.id : null,
+  broke: (build.breakables || []).filter((b) => b.gone).length });
 
 // Headless step hook: some embedded browser panes never run requestAnimationFrame,
 // so verification drives the sim directly and then renders one frame.
@@ -132,6 +140,7 @@ window.__step = (seconds, opts = {}) => {
   for (let i = 0; i < Math.round(seconds / dt); i++) {
     if (opts.actionAt !== undefined && Math.abs(t - opts.actionAt) < dt) PH.fireAction(racer);
     PH.updateRacer(racer, dt, { throttle: 1 });
+    TR.updateTrack(build, dt, racer);
     world.step(dt); t += dt;
   }
   const p2 = racer.chassis.getPosition();

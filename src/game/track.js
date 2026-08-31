@@ -311,72 +311,134 @@ export function buildTrack(planck, world, track) {
 
   // --- features ------------------------------------------------------------
   const breakables = [];      // scripted-destructible: beams and planks
+  const ctx = { planck, world, track, ground, r, breakables, addProp };
 
   for (const f of track.features || []) {
-    if (f.kind === 'rocks') {
-      // A mound: wide at the base, tapering up. Individually shovable, but a
-      // wall of them stops a blunt nose, which is what makes a plow worth its
-      // weight.
-      const rows = f.rows ?? 4;
-      for (let row = 0; row < rows; row++) {
-        const n = Math.max(1, (f.perRow ?? 7) - row * 2);
-        for (let i = 0; i < n; i++) {
-          const rad = (f.radius ?? 0.26) * (0.8 + r() * 0.45);
-          const spread = (f.width ?? 3.2) * (1 - row / (rows + 1));
-          const x = f.x + (n === 1 ? 0 : (i / (n - 1) - 0.5) * spread) + (r() - 0.5) * 0.18;
-          addProp({ kind: 'boulder', x, y: track.height(f.x) + 0.35 + row * (rad * 1.9),
-                    radius: rad, density: f.density ?? 15 });
-        }
-      }
-    }
-
-    if (f.kind === 'tunnel') {
-      // A run of low beams. Solid enough to be a real ceiling, but scripted to
-      // give way to a vehicle that is too tall (see updateTrack) so a bad build
-      // loses a lot of time instead of being stuck forever.
-      const n = Math.max(1, Math.round(f.length / (f.spacing ?? 1.6)));
-      for (let i = 0; i < n; i++) {
-        const x = f.x + (i + 0.5) * (f.length / n);
-        const y = track.height(x) + f.clearance;
-        const body = world.createBody({ type: 'static', position: new Vec2(x, y + 0.28) });
-        body.createFixture({ shape: new Box(0.42, 0.28), friction: 0.4, density: 0 });
-        breakables.push({ kind: 'beam', body, x, bottom: y, half: 0.42, height: 0.28, gone: false, load: 0 });
-      }
-    }
-
-    if (f.kind === 'bridge') {
-      // Planks over a gully. They hold a light vehicle and give way under a
-      // heavy one; the gully below is shallow, so a collapse costs time rather
-      // than ending the race.
-      const n = f.planks ?? 6;
-      const span = f.length / n;
-      // The deck is derived from the ground at each abutment, not hand-typed.
-      // A deck even half a metre proud of the terrain is a step that a small
-      // wheel simply cannot climb, which strands light vehicles at the
-      // entrance -- the exact opposite of the intended weight lesson.
-      const y0 = track.height(f.x), y1 = track.height(f.x + f.length);
-      for (let i = 0; i < n; i++) {
-        const x = f.x + (i + 0.5) * span;
-        const y = y0 + (y1 - y0) * ((i + 0.5) / n);
-        const body = world.createBody({ type: 'static', position: new Vec2(x, y) });
-        body.createFixture({ shape: new Box(span / 2, 0.16), friction: 0.9, density: 0 });
-        breakables.push({ kind: 'plank', body, x, half: span / 2, top: y + 0.16,
-                          limit: f.limit ?? 150, gone: false, load: 0 });
-      }
-    }
+    const build = FEATURE_BUILDERS[f.kind];
+    if (!build) { console.warn('unknown track feature', f.kind); continue; }
+    build(ctx, f);
   }
 
   return { ground, segments, props, breakables, length: track.length, track, world };
 }
 
 /**
- * Per-tick track logic: the scripted part of the breakable features.
+ * Where a feature starts and ends, in metres.
+ *
+ * Needed because the descriptors are NOT consistent: `rocks` treats x as the
+ * centre of its mound, while `tunnel` and `bridge` treat it as the left edge.
+ * That is easy to trip over now that there are more kinds, so every consumer
+ * asks here rather than assuming.
+ */
+export function featureSpan(f) {
+  if (f.kind === 'rocks') {
+    const half = (f.width ?? 3.2) / 2;
+    return [f.x - half, f.x + half];
+  }
+  return [f.x, f.x + (f.length ?? 0)];
+}
+
+/**
+ * One builder per feature kind.
+ *
+ * A registry rather than a chain of ifs: each kind gets an obvious home, and
+ * an unrecognised kind warns and is skipped instead of silently doing nothing.
+ */
+const FEATURE_BUILDERS = {
+  /**
+   * A mound: wide at the base, tapering up. Individually shovable, but a wall
+   * of them stops a blunt nose, which is what makes a plow worth its weight.
+   */
+  rocks(ctx, f) {
+    const { track, r, addProp } = ctx;
+    const rows = f.rows ?? 4;
+    for (let row = 0; row < rows; row++) {
+      const n = Math.max(1, (f.perRow ?? 7) - row * 2);
+      for (let i = 0; i < n; i++) {
+        const rad = (f.radius ?? 0.26) * (0.8 + r() * 0.45);
+        const spread = (f.width ?? 3.2) * (1 - row / (rows + 1));
+        const x = f.x + (n === 1 ? 0 : (i / (n - 1) - 0.5) * spread) + (r() - 0.5) * 0.18;
+        addProp({ kind: 'boulder', x, y: track.height(f.x) + 0.35 + row * (rad * 1.9),
+                  radius: rad, density: f.density ?? 15 });
+      }
+    }
+  },
+
+  /**
+   * A run of low beams. Solid enough to be a real ceiling, but scripted to give
+   * way to a vehicle that is too tall (see updateBreakables) so a bad build
+   * loses a lot of time instead of being stuck forever.
+   */
+  tunnel(ctx, f) {
+    const { planck, world, track, breakables } = ctx;
+    const { Vec2, Box } = planck;
+    const n = Math.max(1, Math.round(f.length / (f.spacing ?? 1.6)));
+    for (let i = 0; i < n; i++) {
+      const x = f.x + (i + 0.5) * (f.length / n);
+      const y = track.height(x) + f.clearance;
+      const body = world.createBody({ type: 'static', position: new Vec2(x, y + 0.28) });
+      body.createFixture({ shape: new Box(0.42, 0.28), friction: 0.4, density: 0 });
+      breakables.push({ kind: 'beam', body, x, bottom: y, half: 0.42, height: 0.28, gone: false, load: 0 });
+    }
+  },
+
+  /**
+   * Planks over a gully. They hold a light vehicle and give way under a heavy
+   * one; the gully below is shallow, so a collapse costs time rather than
+   * ending the race.
+   */
+  bridge(ctx, f) {
+    const { planck, world, track, breakables } = ctx;
+    const { Vec2, Box } = planck;
+    const n = f.planks ?? 6;
+    const span = f.length / n;
+    // The deck is derived from the ground at each abutment, not hand-typed. A
+    // deck even half a metre proud of the terrain is a step that a small wheel
+    // simply cannot climb, which strands light vehicles at the entrance -- the
+    // exact opposite of the intended weight lesson.
+    const y0 = track.height(f.x), y1 = track.height(f.x + f.length);
+    for (let i = 0; i < n; i++) {
+      const x = f.x + (i + 0.5) * span;
+      const y = y0 + (y1 - y0) * ((i + 0.5) / n);
+      const body = world.createBody({ type: 'static', position: new Vec2(x, y) });
+      body.createFixture({ shape: new Box(span / 2, 0.16), friction: 0.9, density: 0 });
+      breakables.push({ kind: 'plank', body, x, half: span / 2, top: y + 0.16,
+                        limit: f.limit ?? 150, gone: false, load: 0 });
+    }
+  },
+};
+
+/**
+ * Per-tick track logic.
+ *
+ * Split in two because they have different audiences. Breakables need a
+ * vehicle to weigh or measure, but feature physics acts on the world whether
+ * anyone is driving or not -- and the track thumbnails, which settle a world
+ * with no racer in it at all, need the second half to run.
+ */
+export function updateTrack(build, dt, racer) {
+  updateFeatures(build, dt);
+  if (racer) updateBreakables(build, dt, racer);
+}
+
+/**
+ * Feature physics that does not depend on a vehicle.
+ *
+ * Currently a no-op -- it exists so trackcard.js can settle a world correctly
+ * before anything is added here that props need (buoyancy, for one).
+ */
+export function updateFeatures(build, dt) {
+  void build; void dt;
+}
+
+/**
+ * The scripted part of the breakable features.
  *
  * Deliberately scripted rather than emergent. "Too heavy" and "too tall" have
  * to be predictable enough for a child to learn them, and a purely
  * impulse-driven threshold is neither legible nor repeatable.
  */
-export function updateTrack(build, dt, racer) {
+export function updateBreakables(build, dt, racer) {
   if (!build.breakables.length || !racer) return;
   const chassis = racer.chassis;
   const pos = chassis.getPosition();

@@ -63,7 +63,7 @@ function rotatePoint([x, y], turns) {
  *
  * planck's getMassData FILLS an output object rather than returning one.
  */
-function setFixtureMass(planck, fixture, kg) {
+export function setFixtureMass(planck, fixture, kg) {
   const md = { mass: 0, center: new planck.Vec2(0, 0), I: 0 };
   fixture.getMassData(md);
   if (md.mass > 1e-6) fixture.setDensity(kg / md.mass);   // density 1 => mass == area

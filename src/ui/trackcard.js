@@ -5,7 +5,7 @@
 // milliseconds per card and guarantees the picture can never drift from what
 // the player will actually drive through.
 
-import { buildTrack } from '../game/track.js';
+import { buildTrack, updateFeatures } from '../game/track.js';
 import { createWorld } from '../game/physics.js';
 import { renderView, makeCamera, PX_PER_M } from './render.js';
 
@@ -26,7 +26,12 @@ export function renderTrackCard(planck, track, w, h, opts = {}) {
   try {
     world = createWorld(planck);
     const build = buildTrack(planck, world, track);
-    for (let i = 0; i < SETTLE_STEPS; i++) world.step(1 / 60);
+    for (let i = 0; i < SETTLE_STEPS; i++) {
+      // Same order as the race: feature forces first, then solve. Without this
+      // a prop resting in water would sink through the floor on the card.
+      updateFeatures(build, 1 / 60);
+      world.step(1 / 60);
+    }
 
     const focus = track.showcase ?? track.length / 2;
     const cam = makeCamera();
