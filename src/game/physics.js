@@ -1,7 +1,7 @@
 // Runtime physics for one vehicle: drive, thrust, aero, specials, auto-right.
 
 import { buildVehicle, M } from './build.js';
-import { surfaceAt } from './track.js';
+import { surfaceAt, windAt } from './track.js';
 
 export const GRAVITY = -10;
 
@@ -15,6 +15,36 @@ export const GRAVITY = -10;
  * the same "keep it low" lesson the centre-of-mass marker teaches.
  */
 const DRAG_PER_METRE = 2.0;
+
+/**
+ * Wind, per metre of vehicle height.
+ *
+ * Has to be bigger than it looks, because a wheel motor is SPEED-controlled: it
+ * simply applies more torque against a headwind and holds the same speed, right
+ * up until the demand passes what the motor can give. At 90 a 3m tower lost
+ * only 4% -- the wind was real, absorbed, and invisible. 170 puts that tower at
+ * roughly 410N which, with about 250N of its own air drag, finally exceeds the
+ * ~600N its wheels can deliver, so it genuinely slows. A low car pays about
+ * 70N and never comes close, which is exactly the intended gap.
+ */
+const WIND_PER_METRE = 170;
+const WIND_MAX_HEIGHT = 3.0;
+const WIND_MAX_LEVER = 1.2;
+/**
+ * Wind may never exceed this share of what the wheels can actually push with.
+ *
+ * Without it wind becomes a wall. A tall light tower parked in the strong zone
+ * took EIGHT recovery assists in 25 seconds and travelled 1.5 metres: stopped
+ * dead, hopped, stopped again. The obvious alternative -- dropping the forward
+ * half of the recovery impulse -- was tried and is far worse, because that
+ * shove is what frees a vehicle wedged against a boulder: it cost Rockslide
+ * Spike 69 metres and pushed total assists across the starters from 37 to 47.
+ *
+ * Capping the cause instead of blunting the cure keeps the promise the whole
+ * game rests on. Below the cap the vehicle settles at a slower steady speed;
+ * it never reaches zero, so the stall timer never fires.
+ */
+const WIND_MAX_SHARE = 0.8;
 
 // The kid-friendly guarantee is "never stuck", which is a stronger promise than
 // "never upside down". Vehicles were beaching nose-up at 80-90 degrees with
@@ -223,6 +253,11 @@ export function updateRacer(racer, dt, input = {}) {
     let lo = Infinity, hi = -Infinity;
     for (const hr of racer.hullRender) { lo = Math.min(lo, hr.cy - hr.h / 2); hi = Math.max(hi, hr.cy + hr.h / 2); }
     racer.frontalHeight = Math.max(0.5, hi - lo);
+    racer.hullMidY = Math.max(0, (lo + hi) / 2);      // where wind pushes
+    // What the wheels can push with at full torque. Used to bound wind, so a
+    // headwind can slow a vehicle but never bring it to a halt.
+    racer.tractive = racer.wheels.reduce(
+      (a, w) => a + w.part.wheel.motorTorque / Math.max(0.05, w.radius), 0) || 400;
   }
   const vx = chassis.getLinearVelocity().x;
   if (Math.abs(vx) > 0.2) {
@@ -232,6 +267,28 @@ export function updateRacer(racer, dt, input = {}) {
       const c = chassis.getWorldCenter();
       probe(racer, 'drag', 'drag', c.x, c.y, drag, 0);
     }
+  }
+
+  // -- wind ----------------------------------------------------------------
+  // Applied at the frontal-area centroid rather than the centre of mass. For a
+  // low car that is a pitching moment of about 36 N.m, i.e. nothing; for a 3m
+  // tower it is ~405 N.m against roughly 1000 N.m of tipping moment, so the
+  // nose lifts visibly and recoverably. Lumping it at the centre of mass would
+  // delete the better half of the lesson.
+  const wind = (input.wind !== false && racer.track)
+    ? windAt(racer.track, chassis.getPosition().x) : null;
+  racer.wind = wind;
+  if (wind) {
+    // Height is capped for the wind term specifically. Uncapped, an absurd
+    // tower is pushed nearly to a standstill, which trips the 2.5s stall
+    // recovery -- and that hands it a free forward impulse every 2.5 seconds,
+    // for ever. Wind must never become propulsion.
+    const h = Math.min(WIND_MAX_HEIGHT, racer.frontalHeight);
+    const f = wind.dir * Math.min(WIND_PER_METRE * h * wind.s,
+                                  WIND_MAX_SHARE * racer.tractive);
+    const at = chassis.getWorldPoint(new Vec2(0, Math.min(WIND_MAX_LEVER, racer.hullMidY ?? 0.4)));
+    chassis.applyForce(new Vec2(f, 0), at, true);
+    if (racer.probe) probe(racer, 'wind', 'drag', at.x, at.y, f, 0);
   }
 
   // -- jets ------------------------------------------------------------
@@ -274,8 +331,17 @@ export function updateRacer(racer, dt, input = {}) {
   // Downforce scales with the square of forward speed, so a wing does nothing
   // when you are crawling and a lot when you are about to take off.
   const vel = chassis.getLinearVelocity();
+  // Airspeed, not ground speed. In a headwind a vehicle is SLOWER, so a wing
+  // keyed to ground speed makes less downforce exactly when the wind's pitching
+  // moment is trying to lift the nose -- backwards. This makes the wing the
+  // right answer to a wind zone, which is a lesson a child can find by trying.
+  //
+  // Only the wing uses airspeed. Switching the drag term to it as well would
+  // double-count, and keeping wind as a separate force is what lets a STOPPED
+  // vehicle still get pushed, which is the most legible thing wind can do.
+  const windX = wind ? -wind.dir * wind.s * 6 : 0;
   for (const wing of racer.wings) {
-    const vx = Math.abs(vel.x);
+    const vx = Math.abs(vel.x - windX);
     const down = -wing.part.wing.downforce * vx * vx;
     const at = chassis.getWorldPoint(wing.point);
     chassis.applyForce(new Vec2(0, down), at, true);

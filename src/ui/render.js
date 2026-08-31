@@ -6,6 +6,7 @@
 import { spriteCanvas } from '../art/atlas.js';
 import { M } from '../game/build.js';
 import { CELL } from '../game/parts.js';
+import { windAt, surfaceAt } from '../game/track.js';
 
 export const PX_PER_M = CELL / M;   // 64
 
@@ -129,6 +130,117 @@ function drawBreakables(ctx, p, build) {
     ctx.strokeStyle = '#12141c'; ctx.lineWidth = Math.max(1, 2 * cam0(p));
     ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
     ctx.restore();
+  }
+}
+
+/**
+ * Wind, drawn three ways because it is the one force in the game with nothing
+ * to look at.
+ *
+ * All three read the SAME windAt() the physics reads, so what is on screen can
+ * never drift from what is being applied -- the streaks bunch up exactly where
+ * the gust peaks, because it is one function.
+ */
+function drawWind(ctx, p, vw, vh, build, tMs) {
+  const zones = (build.winds || []).filter((w) => w.kind === 'zone');
+  if (!zones.length) return;
+  const track = build.track;
+
+  // 1. Grass leaning downwind, along the whole zone. The socks mark the gates;
+  //    this is what says the wind is still happening in between.
+  ctx.lineCap = 'round';
+  for (const z of zones) {
+    for (let x = z.x0; x <= z.x1; x += 0.7) {
+      const px = p.sx(x);
+      if (px < -20 || px > vw + 20) continue;
+      const w = windAt(track, x);
+      if (!w) continue;
+      const y = track.height(x);
+      const lean = (0.45 + 0.55 * w.s) * w.dir;
+      const len = 0.42 * p.s;
+      // The ground's own cap colour, not a fixed green: both zones here sit on
+      // tarmac, and grass sprouting out of a road looks like a bug.
+      ctx.strokeStyle = surfaceAt(track, x).cap;
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = Math.max(1, 1.8 * cam0(p));
+      ctx.beginPath();
+      ctx.moveTo(px, p.sy(y));
+      ctx.lineTo(px + lean * len, p.sy(y) - len * 0.75);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // 2. Streaks. Positions come from a render-side hash rather than any shared
+  //    PRNG, so this cannot perturb the seeded terrain generator.
+  const t = tMs / 1000;
+  for (const z of zones) {
+    const span = z.x1 - z.x0;
+    for (let i = 0; i < 54; i++) {
+      const h = Math.sin(i * 12.9898) * 43758.5453;
+      const r1 = h - Math.floor(h);
+      const h2 = Math.sin(i * 78.233) * 12345.6789;
+      const r2 = h2 - Math.floor(h2);
+      const depth = 0.4 + 0.6 * r2;                 // parallax
+      const drift = (t * (5 + 7 * depth) * z.dir) % span;
+      let x = z.x0 + ((r1 * span + drift) % span + span) % span;
+      const w = windAt(track, x);
+      if (!w) continue;
+      const px = p.sx(x);
+      if (px < -60 || px > vw + 60) continue;
+      const y = track.height(x) + 0.5 + r2 * 3.4;
+      const len = (0.6 + 1.0 * w.s) * depth * p.s;
+      ctx.strokeStyle = `rgba(213,220,232,${(0.12 + 0.3 * w.s * depth).toFixed(3)})`;
+      ctx.lineWidth = Math.max(1, 1.4 * depth * cam0(p));
+      ctx.beginPath();
+      ctx.moveTo(px, p.sy(y));
+      ctx.lineTo(px + len * w.dir, p.sy(y));
+      ctx.stroke();
+    }
+  }
+
+  // 3. The socks: a mast and a striped cone whose sag reads the local strength,
+  //    in the same yellow the tunnel beams use for "pay attention".
+  for (const sock of build.winds) {
+    if (sock.kind !== 'sock') continue;
+    const px = p.sx(sock.x);
+    if (px < -40 || px > vw + 40) continue;
+    const w = windAt(track, sock.x);
+    const s = w ? w.s : 0;
+    const dir = w ? w.dir : -1;
+    const topY = p.sy(sock.base + 3.0);
+    ctx.strokeStyle = '#68738d';
+    ctx.lineWidth = Math.max(2, 3 * cam0(p));
+    ctx.beginPath();
+    ctx.moveTo(px, p.sy(sock.base));
+    ctx.lineTo(px, topY);
+    ctx.stroke();
+
+    // Fully limp hangs straight down; fully taut points along the wind.
+    const ang = (1 - s) * (Math.PI / 2) * -1;
+    const L = 1.15 * p.s;
+    const ex = px + Math.cos(ang) * L * dir;
+    const ey = topY - Math.sin(ang) * L;
+    const nx = -(ey - topY), ny = (ex - px);
+    const nlen = Math.hypot(nx, ny) || 1;
+    const halfA = 0.20 * p.s, halfB = 0.09 * p.s;
+    ctx.beginPath();
+    ctx.moveTo(px + (nx / nlen) * halfA, topY + (ny / nlen) * halfA);
+    ctx.lineTo(ex + (nx / nlen) * halfB, ey + (ny / nlen) * halfB);
+    ctx.lineTo(ex - (nx / nlen) * halfB, ey - (ny / nlen) * halfB);
+    ctx.lineTo(px - (nx / nlen) * halfA, topY - (ny / nlen) * halfA);
+    ctx.closePath();
+    ctx.fillStyle = '#ffd23e';
+    ctx.fill();
+    ctx.strokeStyle = '#12141c';
+    ctx.lineWidth = Math.max(1, 1.6 * cam0(p));
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(px + (nx / nlen) * halfA * 0.9, topY + (ny / nlen) * halfA * 0.9);
+    ctx.lineTo((px + ex) / 2, (topY + ey) / 2);
+    ctx.strokeStyle = '#d4541c';
+    ctx.lineWidth = Math.max(2, 4 * cam0(p));
+    ctx.stroke();
   }
 }
 
@@ -430,6 +542,7 @@ export function renderView({ ctx, vw, vh }, cam, trackBuild, racers) {
   drawFinish(ctx, p, trackBuild.length, vh);
   drawProps(ctx, p, trackBuild.props);
   drawBreakables(ctx, p, trackBuild);
+  drawWind(ctx, p, vw, vh, trackBuild, performance.now());
   for (const r of racers) drawRacer(ctx, p, r);
 
   ctx.restore();

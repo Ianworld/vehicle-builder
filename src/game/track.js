@@ -60,6 +60,34 @@ export function slopeAt(track, x, h = 0.2) {
   return Math.atan2(track.height(x + h) - track.height(x - h), 2 * h);
 }
 
+const WIND_EDGE = 4;        // metres of ramp at each end of a zone
+
+/**
+ * Wind strength at x, 0 outside every zone.
+ *
+ * The gust is a function of POSITION, not time. A time-based gust would mean
+ * one racer arriving in a lull and the other in a peak -- genuine unfairness,
+ * experienced by a child as "he got lucky wind" and impossible to argue with. A
+ * standing wave gives both racers the identical profile, still feels gusty
+ * because they are moving through it, needs no clock at all, and lets the
+ * renderer draw its streaks from the same function that supplies the force.
+ *
+ * @returns {null|{s:number, dir:number}}
+ */
+export function windAt(track, x) {
+  for (const f of track.features || []) {
+    if (f.kind !== 'wind') continue;
+    const x0 = f.x, x1 = f.x + f.length;
+    if (x < x0 || x > x1) continue;
+    const ramp = (t) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u); };
+    const edge = Math.min(ramp((x - x0) / WIND_EDGE), ramp((x1 - x) / WIND_EDGE));
+    const g = f.gust ?? 0;
+    const s = (f.strength ?? 1) * edge * (1 - g + g * Math.sin(x * 0.9));
+    if (s > 0) return { s, dir: f.dir ?? -1 };
+  }
+  return null;
+}
+
 /** Fade terrain in over the first few metres so the start is always flat. */
 const easeIn = (x) => {
   if (x <= START_FLAT) return 0;
@@ -258,6 +286,28 @@ export const TRACKS = [
       { kind: 'bridge', x: 89, length: 14, planks: 7, limit: 110 },
     ],
   },
+
+  {
+    id: 'windy',
+    name: 'Windy Ridge',
+    blurb: 'A headwind. Tall vehicles get pushed about.',
+    showcase: 112, cardZoom: 0.28,
+    seed: 7373,
+    length: 170,
+    // Tarmac under both zones so GRIP is not a confounder: this track has one
+    // job, which is to isolate how much air a vehicle pushes.
+    surfaces: [[36, 76, 'tarmac'], [92, 148, 'tarmac']],
+    height: (x) => easeIn(x) * (
+      0.95 * Math.sin(x * 0.055) +
+      0.38 * Math.sin(x * 0.17 + 1.9)),
+    holes: [],
+    props: () => [],
+    features: [
+      // A gentle one first, so the effect is met before it decides anything.
+      { kind: 'wind', x: 46, length: 24, strength: 0.75, dir: -1, gust: 0.22 },
+      { kind: 'wind', x: 100, length: 40, strength: 1.10, dir: -1, gust: 0.28 },
+    ],
+  },
 ];
 
 // Searches the test rigs too. Falling back to Rolling Hills for an unknown id
@@ -420,7 +470,8 @@ export function buildTrack(planck, world, track) {
 
   // --- features ------------------------------------------------------------
   const breakables = [];      // scripted-destructible: beams and planks
-  const ctx = { planck, world, track, ground, r, breakables, addProp };
+  const winds = [];           // wind zones and their markers, for the renderer
+  const ctx = { planck, world, track, ground, r, breakables, winds, addProp };
 
   for (const f of track.features || []) {
     const build = FEATURE_BUILDERS[f.kind];
@@ -428,7 +479,7 @@ export function buildTrack(planck, world, track) {
     build(ctx, f);
   }
 
-  return { ground, segments, props, breakables, length: track.length, track, world };
+  return { ground, segments, props, breakables, winds, length: track.length, track, world };
 }
 
 /**
@@ -496,6 +547,25 @@ const FEATURE_BUILDERS = {
    * one; the gully below is shallow, so a collapse costs time rather than
    * ending the race.
    */
+  /**
+   * Wind is invisible, which in a game this visual is a bug on its own. The
+   * force lives in physics.js; this builds the evidence -- a row of windsocks
+   * whose sag is read from the local strength, so a drooping sock at the edge
+   * and a rigid one mid-zone tell the story with no motion at all.
+   */
+  wind(ctx, f) {
+    const { track, winds } = ctx;
+    // Data only -- no bodies. A windsock built as a real static post is a post
+    // standing in the racing line, and every vehicle drove straight into one.
+    // Nothing here is meant to be touched, so nothing here exists to be hit.
+    const n = Math.max(2, Math.round(f.length / 11));
+    for (let i = 0; i <= n; i++) {
+      const x = f.x + (i / n) * f.length;
+      winds.push({ kind: 'sock', x, base: track.height(x) });
+    }
+    winds.push({ kind: 'zone', x0: f.x, x1: f.x + f.length, dir: f.dir ?? -1 });
+  },
+
   bridge(ctx, f) {
     const { planck, world, track, breakables } = ctx;
     const { Vec2, Box } = planck;
