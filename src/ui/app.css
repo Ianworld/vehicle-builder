@@ -182,13 +182,21 @@ canvas { display:block; image-rendering:pixelated; }
 /* ==================================================================== race */
 .race { position:relative; background:#000; }
 .race canvas { width:100%; height:100%; touch-action:none; }
-.race .quit {
+.race .racechrome {
   /* Bottom centre: the top centre sits on the divider and covers P2's
-     nameplate, and the corners belong to the action buttons. */
+     nameplate, and the corners belong to the action buttons. Two 46px buttons
+     plus a gap is 100px, which clears both action buttons in either
+     orientation, and a mis-tap only toggles a visual. */
   position:absolute; bottom:14px; left:50%; transform:translateX(-50%);
-  z-index:12; background:rgba(13,16,23,.82); width:46px; height:38px;
+  z-index:12; display:flex; gap:8px;
+}
+.race .racechrome .btn.icon {
+  position:static; transform:none;
+  background:rgba(13,16,23,.82); width:46px; height:38px;
   min-height:38px; min-width:46px;
 }
+.race .btn.sci { opacity:.6; }
+.race .btn.sci.on { opacity:1; outline:2px solid #4aa8e0; }
 
 .bigmsg {
   position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -352,3 +360,4 @@ canvas { display:block; image-rendering:pixelated; }
    the race list would quietly change what the Start button means. */
 .testSection { border-top:1px solid var(--line); }
 .testSection .secHead b { filter:hue-rotate(-25deg); }
+

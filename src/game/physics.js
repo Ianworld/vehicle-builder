@@ -74,6 +74,60 @@ function inertiaAboutCoM(body) {
   return I > 1e-6 ? I : 1;
 }
 
+/**
+ * Opt-in force recorder for the science view.
+ *
+ * Off by default, so the cost when nobody is looking is one property check per
+ * call site. Recording only reads and stores -- it never applies anything --
+ * so turning it on cannot change the simulation, which is asserted in testing
+ * by stepping the same race with it on and off and comparing final positions.
+ */
+export function enableProbe(racer, on = true) {
+  racer.probe = on ? new Map() : null;
+}
+
+/**
+ * Record one force, in newtons, at a world point.
+ *
+ * Keyed by a stable slot id rather than push order. Drag is gated on speed and
+ * rolling resistance on the surface underneath, so the set of live forces
+ * changes from tick to tick; with a plain array the indices would shift and the
+ * smoothing below would blend one force into another.
+ *
+ * Smoothed here rather than in the renderer because the race runs up to six
+ * fixed steps per drawn frame, and the renderer would only ever see the last.
+ */
+function probe(racer, key, kind, px, py, fx, fy) {
+  const p = racer.probe;
+  if (!p) return;
+  let e = p.get(key);
+  if (!e) p.set(key, (e = { kind, px: 0, py: 0, fx: 0, fy: 0, live: false }));
+  e.px = px; e.py = py;
+  e.fx += (fx - e.fx) * 0.35;
+  e.fy += (fy - e.fy) * 0.35;
+  e.live = true;
+}
+
+/**
+ * Centre of mass of the WHOLE vehicle, in world metres.
+ *
+ * chassis.getWorldCenter() is the centre of mass of the chassis body alone and
+ * leaves out the wheels, which are separate bodies -- with two big wheels that
+ * is 32kg missing, enough that the weight arrow would visibly not line up with
+ * the centre-of-mass dot the builder draws.
+ */
+export function vehicleCentreOfMass(racer) {
+  let m = racer.chassis.getMass();
+  const c = racer.chassis.getWorldCenter();
+  let x = c.x * m, y = c.y * m;
+  for (const w of racer.wheels) {
+    const wm = w.body.getMass();
+    const wc = w.body.getWorldCenter();
+    m += wm; x += wc.x * wm; y += wc.y * wm;
+  }
+  return m > 0 ? { x: x / m, y: y / m, mass: m } : { x: c.x, y: c.y, mass: m };
+}
+
 /** Fire every special at once -- one button, one predictable rule. */
 export function fireAction(racer) {
   const { Vec2 } = racer.planck;
@@ -114,6 +168,8 @@ export function updateRacer(racer, dt, input = {}) {
   const throttle = racer.finished ? 0 : (input.throttle ?? 1);
   racer.throttle = throttle;
 
+  if (racer.probe) for (const e of racer.probe.values()) e.live = false;
+
   for (const s of racer.specials) s.cooldownLeft = Math.max(0, s.cooldownLeft - dt);
   racer.boostFor = Math.max(0, racer.boostFor - dt);
   racer.gripFor = Math.max(0, racer.gripFor - dt);
@@ -136,6 +192,22 @@ export function updateRacer(racer, dt, input = {}) {
     const grip = w.baseFriction * surge * (surf ? surf.grip : 1);
     if (Math.abs(w.fixture.getFriction() - grip) > 1e-4) w.fixture.setFriction(grip);
 
+    if (racer.probe) {
+      // Traction at the contact patch, derived from the motor rather than from
+      // the contact solver: torque over radius is what the tyre puts into the
+      // ground, capped at what the surface can actually hold. That cap IS the
+      // ice lesson -- a wheel spinning on ice draws a short arrow.
+      //
+      // getMotorTorque reads the PREVIOUS step, because updateRacer runs before
+      // world.step. Invisible at 60Hz; do not "fix" it by reordering the step.
+      const fMotor = Math.abs(w.joint.getMotorTorque(1 / dt)) / Math.max(0.05, w.radius);
+      const fMax = grip * (chassis.getMass() * -GRAVITY / Math.max(1, racer.wheels.length));
+      const mag = Math.min(fMotor, fMax) * Math.sign(throttle || 1);
+      const fwd = chassis.getWorldVector(new Vec2(1, 0));
+      const wp = w.body.getPosition();
+      probe(racer, 'drive' + w.slot, 'drive', wp.x, wp.y - w.radius, fwd.x * mag, fwd.y * mag);
+    }
+
     // Rolling resistance for the soft surfaces -- mud and sand sap a wheel
     // regardless of how much torque it has.
     if (surf && surf.roll > 0 && Math.abs(vel0.x) > 0.05) {
@@ -156,6 +228,10 @@ export function updateRacer(racer, dt, input = {}) {
   if (Math.abs(vx) > 0.2) {
     const drag = -Math.sign(vx) * DRAG_PER_METRE * racer.frontalHeight * vx * vx;
     chassis.applyForceToCenter(new Vec2(drag, 0), true);
+    if (racer.probe) {
+      const c = chassis.getWorldCenter();
+      probe(racer, 'drag', 'drag', c.x, c.y, drag, 0);
+    }
   }
 
   // -- jets ------------------------------------------------------------
@@ -163,8 +239,9 @@ export function updateRacer(racer, dt, input = {}) {
     if (!throttle) continue;
     const world = chassis.getWorldVector(t.dir);
     const scale = t.part.thrust.force * throttle * (boosting ? 1.5 : 1);
-    chassis.applyForce(new Vec2(world.x * scale, world.y * scale),
-      chassis.getWorldPoint(t.point), true);
+    const at = chassis.getWorldPoint(t.point);
+    chassis.applyForce(new Vec2(world.x * scale, world.y * scale), at, true);
+    if (racer.probe) probe(racer, 'jet' + t.slot, 'thrust', at.x, at.y, world.x * scale, world.y * scale);
   }
 
   // -- boost -------------------------------------------------------------
@@ -174,8 +251,9 @@ export function updateRacer(racer, dt, input = {}) {
     if (s.kind !== 'boost' || !(s.burnFor > 0)) continue;
     s.burnFor = Math.max(0, s.burnFor - dt);
     const d = chassis.getWorldVector(s.dir);
-    chassis.applyForce(new Vec2(d.x * s.impulse, d.y * s.impulse),
-      chassis.getWorldPoint(s.point), true);
+    const at = chassis.getWorldPoint(s.point);
+    chassis.applyForce(new Vec2(d.x * s.impulse, d.y * s.impulse), at, true);
+    if (racer.probe) probe(racer, 'boost' + s.slot, 'boost', at.x, at.y, d.x * s.impulse, d.y * s.impulse);
   }
 
   // -- anti-wheelie --------------------------------------------------------
@@ -199,7 +277,9 @@ export function updateRacer(racer, dt, input = {}) {
   for (const wing of racer.wings) {
     const vx = Math.abs(vel.x);
     const down = -wing.part.wing.downforce * vx * vx;
-    chassis.applyForce(new Vec2(0, down), chassis.getWorldPoint(wing.point), true);
+    const at = chassis.getWorldPoint(wing.point);
+    chassis.applyForce(new Vec2(0, down), at, true);
+    if (racer.probe) probe(racer, 'wing' + wing.slot, 'wing', at.x, at.y, 0, down);
   }
 
   // -- recovery ----------------------------------------------------------
@@ -258,6 +338,22 @@ export function updateRacer(racer, dt, input = {}) {
       racer.stalledFor = 0;
       racer.bestX = pos.x;
     }
+  }
+
+  if (racer.probe) {
+    // Weight is synthesised rather than recorded: gravity is integrated by the
+    // solver, never applied as a force here. Drawn at the whole-vehicle centre
+    // of mass so it lands on the same point the builder marks.
+    const com = vehicleCentreOfMass(racer);
+    // Read gravity from the WORLD rather than using the constant. The Tilt Test
+    // rig works by rotating the gravity vector, so a hard-coded straight-down
+    // arrow would point the wrong way on exactly the screen where the direction
+    // of the weight is the entire lesson.
+    const g = racer.world.getGravity();
+    probe(racer, 'weight', 'weight', com.x, com.y, g.x * com.mass, g.y * com.mass);
+    // Anything that stopped acting this tick fades instead of vanishing, so an
+    // arrow does not flicker on and off at a gate boundary.
+    for (const e of racer.probe.values()) if (!e.live) { e.fx *= 0.8; e.fy *= 0.8; }
   }
 
   racer.distance = chassis.getPosition().x;

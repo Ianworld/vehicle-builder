@@ -10,6 +10,8 @@ import { drawTiltGauge, fitCanvas, RATING_COLOUR } from './gauge.js';
 import { tiltRating } from '../game/tilt.js';
 import { TILT_MAX } from '../game/testmodes.js';
 import { SURFACES } from '../game/track.js';
+import { enableProbe } from '../game/physics.js';
+import { getPref, setPref } from '../game/prefs.js';
 
 const KEYS = [['a', 'shift'], ['l', ' ']];   // P1, P2
 
@@ -20,7 +22,10 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
   mount.innerHTML = `
     <div class="screen race">
       <canvas id="rc"></canvas>
-      <button class="btn icon quit" data-act="exit" title="Back">🏠</button>
+      <div class="racechrome">
+        <button class="btn icon" data-act="exit" title="Back">🏠</button>
+        <button class="btn icon sci" data-act="science" title="Show the forces">🔬</button>
+      </div>
       <div class="bigmsg" id="bigmsg"></div>
       ${race.lanes.map((l, i) => `
         <button class="actionBtn p${i + 1}" data-fire="${i}">
@@ -318,6 +323,18 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
     }).join('');
   }
 
+  // --------------------------------------------------------- science view
+  // Default off in a race, because arrows over both panes during a first race
+  // hide the vehicles -- but on in a test rig, where looking at the physics is
+  // the entire point. The choice is remembered either way.
+  let science = race.mode ? getPref('science', true) : getPref('science', false);
+
+  function applyScience() {
+    for (const lane of race.lanes) enableProbe(lane.racer, science);
+    mount.querySelector('.sci')?.classList.toggle('on', science);
+  }
+  applyScience();
+
   // ----------------------------------------------------------------- input
   const onDown = (e) => {
     const fire = e.target.closest('[data-fire]');
@@ -327,6 +344,12 @@ export function createRace({ mount, planck, trackId, entries, onExit, onAgain })
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'exit') { destroy(); onExit?.(); }
     if (act === 'again') { destroy(); onAgain?.(); }
+    if (act === 'science') {
+      science = !science;
+      setPref('science', science);
+      applyScience();
+      draw();
+    }
   };
   mount.addEventListener('pointerdown', onDown);
   mount.addEventListener('click', onClick);

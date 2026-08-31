@@ -122,6 +122,7 @@ export function buildVehicle(planck, world, vehicle, spawn = { x: 0, y: 0 }) {
       for (const [cellX, cellY] of seats) {
         const wheel = makeWheel(planck, world, chassis, part, spawn,
           lx(cellX), ly(cellY), part.mass / seats.length);
+        wheel.slot = wheels.length;   // stable id for the force probe
         wheels.push(wheel);
         if (part.role !== 'tread') wheelRender.push({ ...sprite, body: wheel.body });
       }
@@ -157,10 +158,11 @@ export function buildVehicle(planck, world, vehicle, spawn = { x: 0, y: 0 }) {
     if (part.thrust) {
       const dir = rotateDir(planck, part.pushDir || [1, 0], rot);
       const centre = new Vec2(lx(p.x + w / 2), ly(p.y + h / 2));
-      thrusters.push({ part, point: centre, dir, ...nozzleOf(planck, centre, dir, w, h) });
+      thrusters.push({ slot: thrusters.length, part, point: centre, dir,
+        ...nozzleOf(planck, centre, dir, w, h) });
     }
     if (part.wing) {
-      wings.push({ part, point: new Vec2(lx(p.x + w / 2), ly(p.y + h / 2)) });
+      wings.push({ slot: wings.length, part, point: new Vec2(lx(p.x + w / 2), ly(p.y + h / 2)) });
     }
     if (part.special) {
       // Specials rotate too, so a boost can be mounted to fire in any
@@ -168,6 +170,7 @@ export function buildVehicle(planck, world, vehicle, spawn = { x: 0, y: 0 }) {
       const centre = new Vec2(lx(p.x + w / 2), ly(p.y + h / 2));
       const dir = rotateDir(planck, part.pushDir || [1, 0], rot);
       specials.push({
+        slot: specials.length,
         part, ...part.special, cooldownLeft: 0, activeFor: 0,
         point: centre, dir, ...nozzleOf(planck, centre, dir, w, h),
       });

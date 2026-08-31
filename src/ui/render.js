@@ -220,6 +220,146 @@ function drawGrip(ctx, p, racer) {
   });
 }
 
+// ------------------------------------------------------------ science view
+//
+// Colours are the ones the child already associates with each effect: the grit
+// sprites' aqua for grip, the flames' orange for thrust. Every arrow gets the
+// same ink outline the sprite style pass gives every sprite, which is what
+// makes the overlay read as part of the art rather than as a debug HUD.
+// Deliberately no crimson: red already means "bad balance" in the builder.
+const FORCE_COLOUR = {
+  weight: '#f4f7fc',
+  drive: '#7fe3ff',
+  thrust: '#ff8c1a',
+  boost: '#ffd23e',
+  wing: '#2e9fd6',
+  drag: '#68738d',
+};
+
+// Length is a fixed-reference power law, NOT normalised to the largest arrow.
+// Normalising would make length mean something different every frame -- the
+// drag arrow would jump the instant a boost ended -- and for a five-year-old
+// length has to mean magnitude, always. A straight linear scale is no good
+// either: 40N against a 2600N boost is 1.5% of the screen, invisible. This maps
+// the game's real 65:1 spread of forces onto 5.6:1 on screen, monotonically.
+const REF_N = 1500;        // roughly one vehicle's weight
+const REF_LEN = 1.4;       // metres on screen at REF_N
+const EXP = 0.6;
+const CUTOFF_N = 25;       // below this, draw nothing at all
+const MIN_LEN = 0.35;
+const MAX_LEN = 2.6;
+const MAX_ARROWS = 8;
+
+const arrowLen = (f) => (f < CUTOFF_N ? 0
+  : Math.max(MIN_LEN, Math.min(MAX_LEN, Math.pow(f / REF_N, EXP) * REF_LEN)));
+
+function arrow(ctx, p, wx, wy, fx, fy, colour) {
+  const mag = Math.hypot(fx, fy);
+  const len = arrowLen(mag);
+  if (!len) return;
+  const ux = fx / mag, uy = fy / mag;
+  const x0 = p.sx(wx), y0 = p.sy(wy);
+  const px = len * p.s;
+  const x1 = x0 + ux * px, y1 = y0 - uy * px;      // canvas y is down
+  const head = Math.max(5, Math.min(13, px * 0.28));
+  const nx = -uy, ny = -ux;                        // screen-space perpendicular
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const pass of [0, 1]) {
+    ctx.strokeStyle = pass ? colour : '#12141c';
+    ctx.fillStyle = pass ? colour : '#12141c';
+    ctx.lineWidth = pass ? 3 : 6;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1 - ux * head * 0.6, y1 + uy * head * 0.6);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - ux * head + nx * head * 0.55, y1 + uy * head + ny * head * 0.55);
+    ctx.lineTo(x1 - ux * head - nx * head * 0.55, y1 + uy * head - ny * head * 0.55);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+/**
+ * Force arrows, plus the balance marks the builder already draws.
+ *
+ * Draws nothing unless the racer is being probed, so the toggle is simply
+ * whether enableProbe() was called -- renderView needs no extra argument.
+ */
+export function drawForces(ctx, p, racer) {
+  if (!racer.probe) return;
+
+  // Strongest last, so the biggest arrow is never buried under a small one.
+  const arrows = [...racer.probe.values()]
+    .map((e) => ({ e, mag: Math.hypot(e.fx, e.fy) }))
+    .filter((a) => a.mag >= CUTOFF_N)
+    .sort((a, b) => a.mag - b.mag)
+    .slice(-MAX_ARROWS);
+
+  for (const { e } of arrows) {
+    arrow(ctx, p, e.px, e.py, e.fx, e.fy, FORCE_COLOUR[e.kind] || '#f4f7fc');
+  }
+
+  // The same vocabulary as the builder's balance overlay: the dot, a plumb line
+  // straight down, and the bar between the wheel contacts. Watching the plumb
+  // walk past the rear wheel as a vehicle rears up explains a tip-over better
+  // than any arrow, and it needs no probe data at all.
+  const w = racer.probe.get('weight');
+  if (!w) return;
+  const cx = p.sx(w.px), cy = p.sy(w.py);
+
+  if (racer.wheels.length) {
+    // Support base: the outermost contact patches, in WORLD space, so it lies
+    // along the ground rather than along the screen.
+    let a = null, b = null;
+    for (const wheel of racer.wheels) {
+      const q = wheel.body.getPosition();
+      const pt = { x: q.x, y: q.y - wheel.radius };
+      if (!a || pt.x < a.x) a = pt;
+      if (!b || pt.x > b.x) b = pt;
+    }
+
+    ctx.strokeStyle = '#12141c';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(p.sx(a.x), p.sy(a.y)); ctx.lineTo(p.sx(b.x), p.sy(b.y)); ctx.stroke();
+    ctx.strokeStyle = '#ffd23e';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(p.sx(a.x), p.sy(a.y)); ctx.lineTo(p.sx(b.x), p.sy(b.y)); ctx.stroke();
+
+    // Plumb line: dropped along GRAVITY, not down the screen, and stopped where
+    // it meets the line through the contacts. Where that foot lands relative to
+    // the two ends IS the tipping criterion -- once it leaves the bar, over it
+    // goes -- so this draws the mechanism rather than illustrating it.
+    const mag = Math.hypot(w.fx, w.fy);
+    if (mag > 1e-6) {
+      const gx = w.fx / mag, gyv = w.fy / mag;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const det = dx * gyv - dy * gx;
+      if (Math.abs(det) > 1e-6) {
+        const rx = a.x - w.px, ry = a.y - w.py;
+        const t = (dx * ry - dy * rx) / det;         // distance along gravity
+        const fx = w.px + gx * t, fy = w.py + gyv * t;
+        ctx.strokeStyle = 'rgba(255,210,62,.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(p.sx(fx), p.sy(fy)); ctx.stroke();
+        ctx.setLineDash([]);
+        // A tick at the foot, so the eye can see it creep toward the end.
+        ctx.fillStyle = '#ffd23e';
+        ctx.beginPath(); ctx.arc(p.sx(fx), p.sy(fy), 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  ctx.fillStyle = '#12141c';
+  ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffd23e';
+  ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI * 2); ctx.fill();
+}
+
 export function drawRacer(ctx, p, racer) {
   const body = racer.chassis;
   const pos = body.getPosition();
@@ -239,6 +379,10 @@ export function drawRacer(ctx, p, racer) {
       pos.y + hr.cx * sin + hr.cy * cos,
       ang, hr.w, hr.h);
   }
+
+  // On top of the sprite: an arrow hidden under the chassis is useless, and the
+  // ink outline keeps the vehicle readable underneath.
+  drawForces(ctx, p, racer);
 }
 
 function drawSky(ctx, vw, vh) {
