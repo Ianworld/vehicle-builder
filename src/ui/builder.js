@@ -9,12 +9,17 @@ import { CELL, GRID_W, GRID_H, PARTS, GROUPS, getPart, partSize } from '../game/
 import * as V from '../game/vehicle.js';
 import { spriteCanvas, spriteCopy } from '../art/atlas.js';
 import { bindPointer } from './input.js';
+import { tiltTest, tiltRating } from '../game/tilt.js';
+import { drawTiltGauge, fitCanvas, RATING_COLOUR } from './gauge.js';
 
 const TOOLS = [
   { id: 'build', icon: '🔨', label: 'Build' },
   { id: 'turn',  icon: '↻',  label: 'Turn' },
   { id: 'erase', icon: '✕',  label: 'Rub out' },
 ];
+
+const TILT_W = 34;
+const TILT_H = 30;
 
 export function createBuilder({ mount, vehicle, onExit, onSave }) {
   let veh = V.clone(vehicle);
@@ -46,6 +51,7 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
         <div class="meter"><b>⚡</b><em>Speed</em><i><s id="m-speed"></s></i></div>
         <div class="meter"><b>🧲</b><em>Grip</em><i><s id="m-grip"></s></i></div>
         <div class="meter"><b>⚖️</b><em>Weight</em><i><s id="m-weight"></s></i></div>
+        <div class="meter tilt"><b>📐</b><em>Tip</em><canvas id="m-tilt"></canvas></div>
       </div>
 
       <div class="toolbar">
@@ -225,10 +231,6 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
     }
   }
 
-  const RATING_COLOUR = {
-    good: '#46b04a', ok: '#ffd23e', bad: '#e0454f', none: '#8a95ab',
-  };
-
   /**
    * The centre of mass, and the wheel support base it has to sit over.
    *
@@ -296,12 +298,31 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
     if (undoStack.length > 60) undoStack.shift();
   }
 
+  // How steep a slope this vehicle survives. Predicted here from the grid, and
+  // measured for real on the Tilt Test track -- same gauge in both places.
+  let tiltBest = 0;
+
+  function refreshTilt() {
+    const cv = $('#m-tilt');
+    const t = tiltTest(veh);
+    const c = fitCanvas(cv, TILT_W, TILT_H);
+    if (!t) { tiltBest = 0; return; }
+    if (!t.degenerate && t.mode === 'wheels') tiltBest = Math.max(tiltBest, t.angle);
+    drawTiltGauge(c, TILT_W, TILT_H, {
+      angle: t.angle,
+      rating: t.rating,
+      best: tiltBest,
+      wobble: t.degenerate,
+    });
+  }
+
   function refresh() {
     orphans = new Set(V.orphanIndices(veh));
     const s = V.stats(veh);
     $('#m-speed').style.width = (s.speed * 100).toFixed(0) + '%';
     $('#m-grip').style.width = (s.grip * 100).toFixed(0) + '%';
     $('#m-weight').style.width = (s.weight * 100).toFixed(0) + '%';
+    refreshTilt();
     $('#vname').textContent = veh.name;
     $('#warn').hidden = orphans.size === 0;
     draw();
@@ -442,6 +463,10 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
 
   return {
     getVehicle: () => veh,
+    // Exposed for headless verification, the same way race-ui exposes _step:
+    // set parts directly, re-render, and read back what the gauge computed.
+    _refresh: refresh,
+    _tilt: () => tiltTest(veh),
     destroy() { unbind(); ro.disconnect(); window.removeEventListener('keydown', onKey); },
   };
 }

@@ -329,3 +329,8 @@ canvas { display:block; image-rendering:pixelated; }
   .actionBtn { width:74px; height:74px; font-size:29px; }
   .trackChip { flex:1 1 100%; min-width:0; }
 }
+
+/* Tilt gauge: an angle, so it gets a protractor rather than a bar. Fixed width
+   because a wedge cannot stretch the way a meter bar can. */
+.meter.tilt { flex:none; }
+.meter.tilt canvas { display:block; flex:none; }
