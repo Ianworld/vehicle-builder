@@ -174,7 +174,7 @@ reads "Copy & Edit" on a rival and plain "Edit" on your own vehicles.
 
 ### Tracks
 
-Seven race tracks, plus two test rigs (below). Beyond terrain shape they vary
+Ten race tracks, plus two test rigs (below). Beyond terrain shape they vary
 along axes that make different parts win:
 
 | | what it tests |
@@ -185,7 +185,10 @@ along axes that make different parts win:
 | Slick Pass | **ground material** — ice, tarmac |
 | Rockslide | **piles of rock to shove**, plus sand |
 | Low Road | **height limit** — beams overhead |
-| Old Bridge | **weight limit** — planks that give way |
+| Old Bridge | **weight limit** — planks that give way, into water |
+| Windy Ridge | **frontal area** — a headwind |
+| Tipping Point | **torque** — planks on real pivots |
+| Pond Hop | **density** — float or sink |
 
 **Materials** (`SURFACES` in `track.js`) scale wheel grip and rolling
 resistance, and act on WHEELS ONLY. That is what makes the drive parts feel
@@ -212,6 +215,61 @@ time without ever ending a race — the gully under a bridge is shallow.
 Track cards on the race screen are **real renders**: each builds an actual
 world and draws it with the same `renderView` the race uses, so the picture
 cannot drift from what you will drive through.
+
+### Wind, seesaws, water
+
+Three mechanics added later, each with a track that isolates it.
+
+**Wind** (`windAt`) scales with how much air a vehicle pushes, so it finally
+shows on screen what height-scaled air drag has always done quietly. Two things
+it took to work:
+
+- The gust is a function of POSITION, not time. A time-based gust has one racer
+  arriving in a lull and the other in a peak, which a child experiences as "he
+  got lucky wind" and which cannot be argued with. A standing wave gives both
+  lanes an identical profile, still feels gusty because they move through it,
+  and lets the renderer draw its streaks from the same function that supplies
+  the force.
+- It must be strong enough to matter and capped so it cannot stop anyone. A
+  wheel motor is speed-controlled: it answers a headwind with more torque and
+  holds the same speed until demand passes what it can give, so at 90 N/m a 3m
+  tower lost 4%. At 170 it crawls — but uncapped it stops dead and takes eight
+  recovery assists in 25 seconds, so wind is limited to 0.8x what the wheels can
+  push with. Loss by frontal height: 1.0m 0%, 1.5m 1%, 2.0m 4%, 2.5m 22%, 3.0m
+  37%.
+
+The wing uses AIRSPEED, not ground speed — keyed to the latter it made *less*
+downforce exactly when the wind was lifting the nose. Only the wing: switching
+drag as well would double-count.
+
+**Seesaws** are the first dynamic joint in a track, and the one place emergent
+beats scripted, because "further out tips it further" is continuous where a rule
+is a cliff edge. The planned design — a restoring torque deciding how far past
+the pivot you must be — measured almost nothing: a vehicle crosses a 2m arm in
+under a third of a second and no plank with believable inertia turns in that
+time, so it was measuring speed, not weight. A long arm and a small offset fixes
+it, and what varies is how far it goes over.
+
+**Water** is real Archimedes: `density * g * submerged_area`, applied per
+fixture at each one's own submerged centroid. Lumping it at the body centre
+gives zero buoyancy torque, so a vehicle would never right itself or list.
+Submerged area is clipped exactly, not from a bounding box — an AABB is 1.41x
+wider at 45 degrees, so a tumbling vehicle would gain lift as it spun.
+
+At 45 kg/m² the starters sort themselves out: Hopper 28.5 and Spike 33.1 float,
+Plodder 65.5 sinks and is bubble-lifted out. Floaters do sit low, because the
+catalogue only spans 1.7x in material density — `light_block` is the boat part,
+and trying to fix the ride height with the density would break the lesson.
+
+Three traps worth keeping:
+
+- **Ponds must be deep.** A vehicle 1.5m tall needs about 2m of draft, so a
+  shallow pond measures ride height rather than density.
+- **Rolling resistance must skip submerged wheels.** A pond dug through a sand
+  band was charging a floating vehicle 174N of friction on wheels touching
+  nothing, which is most of what a paddle can produce.
+- **Wet effects key on being submerged, not on being over a span of water**, or
+  crossing a bridge applies them while bone dry.
 
 ### Test rigs
 
