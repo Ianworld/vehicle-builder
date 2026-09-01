@@ -114,6 +114,44 @@ function ledge(x, at, h, ramp) {
 }
 
 /**
+ * A bowl with a flat floor and climbable walls, for a pond to sit in.
+ *
+ * The wall length is not cosmetic. A vehicle that sinks has to be able to drive
+ * out again, so the steepest part of the ramp is kept near 20 degrees: for a
+ * cosine wall that means `wall` of roughly 4.3x the depth. Skimping here turns
+ * "you sank, that cost you time" into "you sank, you are finished".
+ */
+function basin(x, at, len, depth, wall = 8) {
+  const end = at + len;
+  if (x <= at || x >= end) return 0;
+  const t = x < at + wall ? (x - at) / wall
+    : x > end - wall ? (end - x) / wall
+      : 1;
+  const u = Math.max(0, Math.min(1, t));
+  return -depth * 0.5 * (1 - Math.cos(Math.PI * u));
+}
+
+/**
+ * Water surface at x, or null.
+ *
+ * Water is a FEATURE, not a SURFACES entry: a surface band is [x0, x1, id] with
+ * no vertical extent at all, and there is nowhere in it to put a waterline.
+ * Deriving the level from the terrain instead would give water that follows the
+ * hills, which is nonsense.
+ *
+ * It builds no fixtures of any kind -- pure data -- so a vehicle arriving at
+ * 12 m/s meets progressive drag rather than a collision impulse.
+ */
+export function waterAt(track, x) {
+  for (const f of track.features || []) {
+    if (f.kind !== 'water') continue;
+    if (x < f.x || x > f.x + f.length) continue;
+    return { level: f.level, x0: f.x, x1: f.x + f.length };
+  }
+  return null;
+}
+
+/**
  * Flatten the terrain across a span, easing back to normal either side.
  *
  * Multiplied into height(). A seesaw needs level ground under it -- a plank
@@ -304,6 +342,10 @@ export const TRACKS = [
     features: [
       { kind: 'bridge', x: 45, length: 14, planks: 7, limit: 150 },
       { kind: 'bridge', x: 89, length: 14, planks: 7, limit: 110 },
+      // The blurb has always promised a swim and the gully has always been dry.
+      // Costs no new balance work: the plank limit already decides who gets wet,
+      // and the bowl was already there.
+      { kind: 'water', x: 90, length: 12, level: -0.75 },
     ],
   },
 
@@ -367,6 +409,35 @@ export const TRACKS = [
       { kind: 'seesaw', x: 48, length: 7, mass: 50, offset: 0.30, friction: 20, limit: 0.26 },
       { kind: 'seesaw', x: 88, length: 7, mass: 65, offset: 0.30, friction: 20, limit: 0.26 },
       { kind: 'seesaw', x: 126, length: 7, mass: 85, offset: 0.30, friction: 20, limit: 0.26 },
+    ],
+  },
+
+  {
+    id: 'pond',
+    name: 'Pond Hop',
+    blurb: 'Light things float. Heavy ones go to the bottom.',
+    showcase: 66, cardZoom: 0.30,
+    seed: 4949,
+    length: 168,
+    // Sand banks: it reads as a beach, and its rolling resistance is right for
+    // a wet edge. The pools are shallow enough that the walls stay drivable.
+    surfaces: [[50, 92, 'sand'], [100, 148, 'sand']],
+    height: (x) => easeIn(x) * (
+      0.70 * Math.sin(x * 0.05) + 0.30 * Math.sin(x * 0.19 + 1.1))
+      // Deep enough to actually float a tall vehicle. At 1.2m of water Spike
+      // sank despite being well under the water's density: it simply could not
+      // get enough of itself under the surface, because a vehicle a metre and a
+      // half tall needs about two metres of draft before the sums work. A pond
+      // that shallow measures ride height, not density.
+      + basin(x, 54, 36, 2.7, 11)
+      + basin(x, 104, 42, 3.0, 13),
+    holes: [],
+    props: () => [],
+    // Short pool first, so a floater gets a quick win before the long one makes
+    // a sinker really pay for the ballast.
+    features: [
+      { kind: 'water', x: 60, length: 24, level: -0.45 },
+      { kind: 'water', x: 112, length: 26, level: -0.55 },
     ],
   },
 ];
@@ -533,7 +604,8 @@ export function buildTrack(planck, world, track) {
   const breakables = [];      // scripted-destructible: beams and planks
   const winds = [];           // wind zones and their markers, for the renderer
   const seesaws = [];         // dynamic planks on pivots
-  const ctx = { planck, world, track, ground, r, breakables, winds, seesaws, addProp };
+  const waters = [];          // ponds, for the renderer
+  const ctx = { planck, world, track, ground, r, breakables, winds, seesaws, waters, addProp };
 
   for (const f of track.features || []) {
     const build = FEATURE_BUILDERS[f.kind];
@@ -541,7 +613,7 @@ export function buildTrack(planck, world, track) {
     build(ctx, f);
   }
 
-  return { ground, segments, props, breakables, winds, seesaws,
+  return { ground, segments, props, breakables, winds, seesaws, waters,
            length: track.length, track, world };
 }
 
@@ -637,6 +709,19 @@ const FEATURE_BUILDERS = {
    * beats scripted: "further out tips it further" is continuous and visible,
    * where a rule would be a cliff edge nobody can see coming.
    */
+  /** Water is data. See waterAt(). */
+  water(ctx, f) {
+    const { track, waters } = ctx;
+    let floor = Infinity;
+    for (let x = f.x; x <= f.x + f.length; x += 0.5) floor = Math.min(floor, track.height(x));
+    // Catch a mis-authored pool early: over flat ground this renders as a
+    // mysterious blue band the vehicle drives straight through.
+    if (floor > f.level - 0.2) {
+      console.warn('water feature at', f.x, 'has no basin under it');
+    }
+    waters.push({ x0: f.x, x1: f.x + f.length, level: f.level, floor });
+  },
+
   seesaw(ctx, f) {
     const { planck, world, track, winds } = ctx;
     const { Vec2, Polygon, RevoluteJoint } = planck;

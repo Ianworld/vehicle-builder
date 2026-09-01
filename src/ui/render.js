@@ -312,6 +312,93 @@ function drawSeesaws(ctx, p, build) {
   }
 }
 
+/**
+ * Ponds, drawn AFTER the vehicles.
+ *
+ * That ordering is the whole trick: the submerged half of a vehicle is tinted
+ * by the water it is sitting in, which is what makes it read as being IN the
+ * pond rather than parked behind a blue rectangle.
+ */
+function drawWater(ctx, p, vw, vh, build, racers, tMs) {
+  const waters = build.waters || [];
+  if (!waters.length) return;
+  const t = tMs / 1000;
+
+  for (const w of waters) {
+    const x0 = p.sx(w.x0), x1 = p.sx(w.x1);
+    if (x1 < -40 || x0 > vw + 40) continue;
+    const top = p.sy(w.level);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, top, x1 - x0, vh + 80 - top);
+    ctx.clip();
+
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = '#16506e';
+    ctx.fillRect(x0, top, x1 - x0, vh + 80 - top);
+    // Deep water reads as deep.
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#12141c';
+    ctx.fillRect(x0, p.sy(w.level - 1.2), x1 - x0, vh + 80);
+    ctx.restore();
+
+    // Waterline, with a slow wobble. Using performance.now() here is safe and
+    // matches how the plume frames are picked: the renderer never touches the
+    // simulation.
+    ctx.strokeStyle = '#7fe3ff';
+    ctx.lineWidth = Math.max(2, 2.5 * cam0(p));
+    ctx.beginPath();
+    const step = Math.max(3, 0.35 * p.s);
+    for (let x = Math.max(x0, -20); x <= Math.min(x1, vw + 20); x += step) {
+      const wx = (x - x0) / p.s + w.x0;
+      const y = p.sy(w.level + 0.045 * Math.sin(wx * 1.9 + t * 2.2));
+      if (x === Math.max(x0, -20)) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Splash on entry, and bubbles from anything the pond has swallowed. Canvas
+  // arcs rather than sprites for the same reason the grit marks skip the ink
+  // outline: a one-pixel border on a four-pixel bubble is all border.
+  for (const r of racers) {
+    const pos = r.chassis.getPosition();
+    const w = waters.find((q) => pos.x >= q.x0 && pos.x <= q.x1);
+    if (!w) continue;
+
+    if (r.splashFor > 0) {
+      const k = r.splashFor / 0.5;
+      ctx.globalAlpha = k * 0.9;
+      ctx.fillStyle = '#7fe3ff';
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI - Math.PI;
+        const spread = (1 - k) * 1.4 + 0.2;
+        const bx = pos.x + Math.cos(a) * spread * (i % 2 ? 1 : 1.4);
+        const by = w.level + Math.abs(Math.sin(a)) * spread * 0.9;
+        ctx.beginPath();
+        ctx.arc(p.sx(bx), p.sy(by), Math.max(1.5, 0.07 * p.s), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (r.sunkFor > 0.8) {
+      ctx.fillStyle = '#f4f7fc';
+      for (let i = 0; i < 7; i++) {
+        const ph = (t * 0.7 + i * 0.37) % 1;
+        const bx = pos.x + Math.sin(i * 2.4 + t) * 0.5;
+        const by = pos.y + ph * (w.level - pos.y + 0.4);
+        if (by > w.level) continue;
+        ctx.globalAlpha = 0.25 + 0.5 * (1 - ph);
+        ctx.beginPath();
+        ctx.arc(p.sx(bx), p.sy(by), Math.max(1.5, (0.05 + 0.05 * ph) * p.s), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
 function blit(ctx, sprite, p, wx, wy, angle, wMeters, hMeters) {
   const img = spriteCanvas(sprite.art, sprite.rot, 1);
   ctx.save();
@@ -613,6 +700,7 @@ export function renderView({ ctx, vw, vh }, cam, trackBuild, racers) {
   drawWind(ctx, p, vw, vh, trackBuild, performance.now());
   drawSeesaws(ctx, p, trackBuild);
   for (const r of racers) drawRacer(ctx, p, r);
+  drawWater(ctx, p, vw, vh, trackBuild, racers, performance.now());
 
   ctx.restore();
 }

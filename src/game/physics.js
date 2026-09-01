@@ -1,7 +1,8 @@
 // Runtime physics for one vehicle: drive, thrust, aero, specials, auto-right.
 
 import { buildVehicle, M } from './build.js';
-import { surfaceAt, windAt } from './track.js';
+import { surfaceAt, windAt, waterAt } from './track.js';
+import { WATER, displacementOf, applyFluid } from './fluid.js';
 
 export const GRAVITY = -10;
 
@@ -46,6 +47,20 @@ const WIND_MAX_LEVER = 1.2;
  */
 const WIND_MAX_SHARE = 0.8;
 
+// A sunk vehicle is the only genuinely new way to be stuck that water adds, and
+// the ordinary rescue cannot reach it: underwater the vertical drag on a sunk
+// Plodder is about 3160N against 207kg, so the recovery hop dies inside a third
+// of a metre. So a sunk vehicle gets bubbles instead -- an additive upward force
+// that ramps in BEFORE the stall timer would fire, so the player sees help
+// rather than flailing. Additive rather than a density multiplier because even
+// doubling the density will not float solid ballast at 136 kg/m^2, so a
+// multiplier would fail on exactly the vehicle that needs it.
+const SUNK_FRAC = 0.6;         // this submerged counts as under
+const SUNK_GRACE = 2.0;        // seconds before the bubbles start
+const SUNK_RAMP = 1.0;         // seconds to full lift
+const SUNK_LIFT = 1.4;         // times the net submerged weight
+const SUNK_MAX = 5.0;          // hard stop
+
 // The kid-friendly guarantee is "never stuck", which is a stronger promise than
 // "never upside down". Vehicles were beaching nose-up at 80-90 degrees with
 // their wheels spinning in the air -- nowhere near a flip, but just as stuck.
@@ -87,6 +102,16 @@ export function createRacer(planck, world, vehicle, spawn) {
 }
 
 const normAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** Shoelace area of a cached local polygon, for the submerged fraction. */
+function polyArea(d) {
+  let a2 = 0;
+  for (let i = 0; i < d.n; i++) {
+    const j = (i + 1) % d.n;
+    a2 += d.xs[i] * d.ys[j] - d.xs[j] * d.ys[i];
+  }
+  return Math.abs(a2) / 2;
+}
 
 /**
  * Rotational inertia about the CENTRE OF MASS.
@@ -205,6 +230,42 @@ export function updateRacer(racer, dt, input = {}) {
   racer.gripFor = Math.max(0, racer.gripFor - dt);
   racer.hopFor = Math.max(0, racer.hopFor - dt);
 
+  // -- water ---------------------------------------------------------------
+  // Looked up before the wheels, because being underwater changes what they
+  // can do. Displacement geometry is cached on first contact: it is local to
+  // each body and never changes.
+  const pos0 = chassis.getPosition();
+  const water = racer.track ? waterAt(racer.track, pos0.x) : null;
+  if (water && !racer.disp) {
+    racer.disp = displacementOf(chassis);
+    racer.hullArea = racer.disp.reduce((a, d) => a + (d.kind === 'circle'
+      ? Math.PI * d.r * d.r : polyArea(d)), 0) || 1;
+    for (const w of racer.wheels) w.disp = displacementOf(w.body);
+  }
+  let subArea = 0;
+  if (water) {
+    subArea = applyFluid(racer.planck, chassis, racer.disp, water.level, GRAVITY);
+    for (const w of racer.wheels) {
+      w.subArea = applyFluid(racer.planck, w.body, w.disp, water.level, GRAVITY);
+    }
+  } else {
+    for (const w of racer.wheels) w.subArea = 0;
+  }
+  // Keyed on actually being IN the water, not on being over a span of it.
+  // Driving across a bridge counts as neither wet nor damped -- gating this on
+  // the zone alone quietly gave anything crossing the Old Bridge the water's
+  // angular damping while it was still bone dry.
+  const inWater = subArea > 0;
+  if (inWater !== !!racer.wetDamping) {
+    racer.wetDamping = inWater;
+    chassis.setAngularDamping(inWater ? WATER.angularDamping : 0.6);
+  }
+  const wasSub = racer.submergedFrac || 0;
+  racer.submergedFrac = water ? subArea / racer.hullArea : 0;
+  // Crossing into the water: held so the splash has time to be seen.
+  if (racer.submergedFrac > 0.05 && wasSub <= 0.05) racer.splashFor = 0.5;
+  racer.splashFor = Math.max(0, (racer.splashFor || 0) - dt);
+
   // -- drive -----------------------------------------------------------
   // Negative motor speed spins a wheel clockwise, which drives +x.
   const boosting = racer.boostFor > 0;
@@ -219,7 +280,11 @@ export function updateRacer(racer, dt, input = {}) {
     // starts from so much more friction that ice barely troubles it.
     const surf = racer.track ? surfaceAt(racer.track, w.body.getPosition().x) : null;
     const surge = racer.gripFor > 0 ? (racer.gripMultiplier || 1) : 1;
-    const grip = w.baseFriction * surge * (surf ? surf.grip : 1);
+    // A wheel under the waterline bites far less -- but only that wheel. One up
+    // on the bank keeps its dry grip, which is why this belongs here and not in
+    // a SURFACES band.
+    const wet = water && (w.body.getPosition().y - w.radius) < water.level;
+    const grip = w.baseFriction * surge * (surf ? surf.grip : 1) * (wet ? WATER.wetGrip : 1);
     if (Math.abs(w.fixture.getFriction() - grip) > 1e-4) w.fixture.setFriction(grip);
 
     if (racer.probe) {
@@ -238,9 +303,30 @@ export function updateRacer(racer, dt, input = {}) {
       probe(racer, 'drive' + w.slot, 'drive', wp.x, wp.y - w.radius, fwd.x * mag, fwd.y * mag);
     }
 
+    // Paddling. Not optional: without it a floating vehicle sits in the middle
+    // of the pond going nowhere and the recovery controller has to fish it out
+    // every single time. Clamped, because uncapped a big wheel makes 236N and
+    // turns into a speedboat, which buries the density lesson under a
+    // propulsion one.
+    if (w.subArea > 0 && throttle) {
+      // The WHEEL's rotation. WheelJoint.getJointSpeed() is the suspension's
+      // linear speed along its axis, which is near zero on a floating vehicle:
+      // reading that gave a paddle force of hundredths of a newton and left
+      // every floater sitting motionless in the middle of the pond.
+      const spin = Math.abs(w.body.getAngularVelocity());
+      const f = Math.min(WATER.paddle * w.subArea * spin * w.radius, WATER.paddleMax);
+      chassis.applyForce(new Vec2(Math.sign(throttle) * f, 0), w.body.getPosition(), true);
+    }
+
     // Rolling resistance for the soft surfaces -- mud and sand sap a wheel
     // regardless of how much torque it has.
-    if (surf && surf.roll > 0 && Math.abs(vel0.x) > 0.05) {
+    // ...but not while the wheel is in the water. Rolling resistance is the
+    // ground dragging on a tyre, and a floating wheel is not on the ground: a
+    // pond dug in a sand band was charging a floating Hopper 174N of phantom
+    // sand friction, which is most of what a paddle can produce, so every
+    // floater sat motionless. Its speed gate is also why the net force
+    // flickered on and off at a twentieth of a metre per second.
+    if (surf && surf.roll > 0 && !wet && Math.abs(vel0.x) > 0.05) {
       const load = (chassis.getMass() / Math.max(1, racer.wheels.length)) * -GRAVITY;
       const drag = -Math.sign(vel0.x) * surf.roll * load;
       chassis.applyForce(new Vec2(drag, 0), w.body.getPosition(), true);
@@ -295,7 +381,8 @@ export function updateRacer(racer, dt, input = {}) {
   for (const t of racer.thrusters) {
     if (!throttle) continue;
     const world = chassis.getWorldVector(t.dir);
-    const scale = t.part.thrust.force * throttle * (boosting ? 1.5 : 1);
+    const scale = t.part.thrust.force * throttle * (boosting ? 1.5 : 1)
+      * (racer.submergedFrac > 0.3 ? WATER.jetScale : 1);
     const at = chassis.getWorldPoint(t.point);
     chassis.applyForce(new Vec2(world.x * scale, world.y * scale), at, true);
     if (racer.probe) probe(racer, 'jet' + t.slot, 'thrust', at.x, at.y, world.x * scale, world.y * scale);
@@ -348,6 +435,17 @@ export function updateRacer(racer, dt, input = {}) {
     if (racer.probe) probe(racer, 'wing' + wing.slot, 'wing', at.x, at.y, 0, down);
   }
 
+  // -- sunk ------------------------------------------------------------------
+  const under = racer.submergedFrac > SUNK_FRAC;
+  racer.sunkFor = under ? (racer.sunkFor || 0) + dt : 0;
+  if (racer.sunkFor > SUNK_GRACE && racer.sunkFor < SUNK_GRACE + SUNK_MAX) {
+    const ramp = Math.min(1, (racer.sunkFor - SUNK_GRACE) / SUNK_RAMP);
+    const net = chassis.getMass() * -GRAVITY - WATER.density * -GRAVITY * subArea;
+    if (net > 0) {
+      chassis.applyForceToCenter(new Vec2(0, net * SUNK_LIFT * ramp), true);
+    }
+  }
+
   // -- recovery ----------------------------------------------------------
   // Indestructible and never stuck. Two triggers: an obvious flip, or simply
   // failing to make forward progress. The second one is what actually matters
@@ -387,7 +485,12 @@ export function updateRacer(racer, dt, input = {}) {
     // A one-shot hop. Righting alone does nothing for a hull wedged against a
     // ledge; it needs to be lifted clear as well as levelled.
     const m = chassis.getMass();
-    chassis.applyLinearImpulse(new Vec2(m * 1.6, m * 4.0), chassis.getWorldCenter(), true);
+    // The hop is pointless underwater -- vertical drag eats it in a third of a
+    // metre -- and it burns a recovery for nothing. The righting torque below
+    // still runs, because a vehicle upside down on the bottom should turn over.
+    if (racer.submergedFrac <= 0.5) {
+      chassis.applyLinearImpulse(new Vec2(m * 1.6, m * 4.0), chassis.getWorldCenter(), true);
+    }
   }
 
   if (racer.recoverFor > 0) {
