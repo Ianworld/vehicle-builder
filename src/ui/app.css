@@ -127,7 +127,12 @@ canvas { display:block; image-rendering:pixelated; }
 .card .thumb {
   background:#0a0d14; border-radius:10px; height:130px; margin-bottom:10px;
   display:flex; align-items:center; justify-content:center; overflow:hidden;
+  /* A button, so tapping the picture edits -- the obvious thing to try for a
+     player who cannot read the Edit label underneath. */
+  width:100%; padding:0; border:2px solid transparent; cursor:pointer;
+  font:inherit; color:inherit;
 }
+.card .thumb:hover, .card .thumb:focus-visible { border-color:var(--line); }
 .card .cname { font-weight:700; font-size:16px; margin-bottom:8px; }
 .cbars { display:flex; flex-direction:column; gap:3px; margin-bottom:11px; }
 .cbars i { display:block; height:6px; border-radius:4px; background:#0b0e15; overflow:hidden; }

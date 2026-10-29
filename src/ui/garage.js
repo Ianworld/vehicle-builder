@@ -59,7 +59,7 @@ export function createGarage({ mount, onEdit, onNew, onRace }) {
       const card = document.createElement('div');
       card.className = 'card';
       card.innerHTML = `
-        <div class="thumb"></div>
+        <button class="thumb" data-edit="${v.id}" title="Edit"></button>
         <div class="cname"></div>
         <div class="cbars">
           <i title="Speed"><s style="width:${(stats.speed * 100) | 0}%"></s></i>

@@ -14,6 +14,7 @@ import { createBuilder } from './ui/builder.js';
 import { createSelect } from './ui/select.js';
 import { createRace } from './ui/race-ui.js';
 import { loadStarters } from './game/starters.js';
+import { getPref, setPref } from './game/prefs.js';
 
 const app = document.getElementById('app');
 let current = null;
@@ -26,8 +27,20 @@ function swap(factory) {
   window.__vb = current;
 }
 
-/** Last race-screen selection, so a trip through the builder comes back to it. */
-let selection = null;
+/**
+ * Last race-screen selection: both picks and the track.
+ *
+ * Persisted, not just held in memory. In memory it survived every trip through
+ * the garage and builder but not a page reload, so every fresh visit went back
+ * to the defaults. createSelect already falls back to the defaults for an id
+ * that no longer exists, so a deleted vehicle cannot strand a stale pick.
+ */
+let selection = getPref('selection', null);
+
+function remember(state) {
+  selection = state;
+  setPref('selection', state);
+}
 
 function showGarage() {
   swap((mount) => createGarage({
@@ -51,13 +64,14 @@ async function showSelect(initial) {
   swap((mount) => createSelect({
     mount, vehicles, initial,
     planck: window.planck,
-    onGarage: (state) => { selection = state; showGarage(); },
-    onStart: (cfg) => { selection = cfg.state; showRace(cfg); },
+    onChange: remember,
+    onGarage: (state) => { remember(state); showGarage(); },
+    onStart: (cfg) => { remember(cfg.state); showRace(cfg); },
 
     // Build a new vehicle straight from the race screen, and come back with it
     // already picked for that player.
     onNew: (playerIndex, state) => {
-      selection = state;
+      remember(state);
       const v = V.emptyVehicle();
       showBuilder(v, { back: () => showSelect(withPick(state, playerIndex, v.id)) });
     },
@@ -65,7 +79,7 @@ async function showSelect(initial) {
     // Editing a built-in rival edits YOUR COPY of it. The rivals have to stay
     // available to race against, and a fresh browser has nothing else.
     onEdit: (vehicle, playerIndex, state) => {
-      selection = state;
+      remember(state);
       const v = vehicle.starter
         ? { ...V.clone(vehicle), id: V.newId(), name: vehicle.name + ' copy', starter: false }
         : vehicle;
@@ -113,7 +127,7 @@ async function boot() {
   }
   // The race screen is home: it is what a player actually wants to do, and
   // everything else is reachable from it.
-  showSelect();
+  showSelect(selection);
 }
 
 boot();

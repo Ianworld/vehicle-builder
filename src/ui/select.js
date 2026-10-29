@@ -15,7 +15,7 @@ import { renderTrackCard } from './trackcard.js';
  * @param {(playerIndex:number, state:object)=>void} p.onNew
  * @param {(vehicle:object, playerIndex:number, state:object)=>void} p.onEdit
  */
-export function createSelect({ mount, planck, vehicles, initial, onStart, onGarage, onNew, onEdit }) {
+export function createSelect({ mount, planck, vehicles, initial, onStart, onGarage, onNew, onEdit, onChange }) {
   const byId = (id) => vehicles.find((v) => v.id === id);
   // Default to two different vehicles so the first race is never a mirror match.
   const picks = [
@@ -130,10 +130,11 @@ export function createSelect({ mount, planck, vehicles, initial, onStart, onGara
       const [p, id] = pick.dataset.pick.split(':');
       picks[+p] = vehicles.find((v) => v.id === id);
       renderChosen(+p); renderChoices(+p);
+      onChange?.(state());
       return;
     }
     const tr = e.target.closest('[data-track]');
-    if (tr) { trackId = tr.dataset.track; renderTracks(); return; }
+    if (tr) { trackId = tr.dataset.track; renderTracks(); onChange?.(state()); return; }
 
     const add = e.target.closest('[data-new]');
     if (add) { onNew?.(+add.dataset.new, state()); return; }
