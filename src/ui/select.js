@@ -38,7 +38,7 @@ export function createSelect({ mount, planck, vehicles, initial, onStart, onGara
         <div class="pickers">
         <div class="picker" data-player="0">
           <div class="phead p1"><i>1</i> Player 1</div>
-          <div class="chosen" id="chosen0"></div>
+          <button class="chosen" id="chosen0" data-edit="0" title="Edit"></button>
           <div class="chosenActions">
             <button class="btn" data-edit="0"><b class="ico">🔧</b><span class="elabel">Edit</span></button>
           </div>
@@ -46,7 +46,7 @@ export function createSelect({ mount, planck, vehicles, initial, onStart, onGara
         </div>
         <div class="picker" data-player="1">
           <div class="phead p2"><i>2</i> Player 2</div>
-          <div class="chosen" id="chosen1"></div>
+          <button class="chosen" id="chosen1" data-edit="1" title="Edit"></button>
           <div class="chosenActions">
             <button class="btn" data-edit="1"><b class="ico">🔧</b><span class="elabel">Edit</span></button>
           </div>
@@ -66,6 +66,9 @@ export function createSelect({ mount, planck, vehicles, initial, onStart, onGara
 
   const $ = (s) => mount.querySelector(s);
 
+  // The big picture is itself the Edit button, so it does exactly what the
+  // button underneath does -- including editing a COPY of a built-in rival.
+  // Tapping the thing you want to change is what a pre-reader tries first.
   function renderChosen(p) {
     const host = $(`#chosen${p}`);
     host.innerHTML = '';

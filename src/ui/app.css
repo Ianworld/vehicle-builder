@@ -86,29 +86,41 @@ canvas { display:block; image-rendering:pixelated; }
 .btn.tool.on { background:var(--accent); border-color:var(--accent); color:#04121b; }
 .btn.tool.on span { color:#04121b; }
 
-.tray { background:var(--panel2); border-top:1px solid var(--line); flex:none; }
-.tabs { display:flex; gap:4px; padding:6px 10px 0; }
-.tab {
-  font:inherit; font-size:12px; font-weight:700; letter-spacing:.4px;
-  background:transparent; color:var(--dim); border:0; border-bottom:2px solid transparent;
-  padding:6px 12px; cursor:pointer; min-height:40px;
-  display:flex; align-items:center; gap:6px;
+/* Parts down the left, everything else to the right. */
+.bbody { flex:1; min-height:0; display:flex; }
+.bmain { flex:1; min-width:0; display:flex; flex-direction:column; }
+
+/* One stack, every part, a heading per group. No tabs: a tab hides three
+   quarters of the parts behind a choice the player has to know to make. */
+.tray {
+  flex:none; width:178px; overflow-y:auto; overscroll-behavior:contain;
+  background:var(--panel2); border-right:1px solid var(--line);
+  padding:4px 8px 14px; scrollbar-width:thin; -webkit-overflow-scrolling:touch;
 }
-.tab b { font-size:17px; font-weight:400; line-height:1; }
-.tab.on { color:var(--text); border-bottom-color:var(--accent2); }
-.parts {
-  display:flex; gap:8px; padding:8px 10px 12px; overflow-x:auto;
-  scrollbar-width:thin; -webkit-overflow-scrolling:touch;
+.trayhead {
+  display:flex; align-items:center; gap:6px; padding:12px 2px 6px;
+  font-size:12px; font-weight:700; letter-spacing:.5px; color:var(--dim);
+  text-transform:uppercase; border-bottom:1px solid var(--line); margin-bottom:8px;
 }
+.trayhead:first-child { padding-top:6px; }
+.trayhead b { font-size:17px; font-weight:400; line-height:1; }
+.parts { display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; }
 .part {
-  flex:none; width:70px; background:var(--panel); border:2px solid var(--line);
+  background:var(--panel); border:2px solid var(--line);
   border-radius:12px; padding:5px 3px 6px; cursor:pointer; color:var(--dim);
   display:flex; flex-direction:column; align-items:center; gap:2px;
-  touch-action:manipulation;
+  touch-action:manipulation; font:inherit; min-width:0;
 }
 .part canvas { width:46px; height:46px; }
 .part span { font-size:10px; font-weight:600; text-align:center; line-height:1.15; }
 .part.sel { border-color:var(--accent2); background:#241a10; color:var(--text); }
+
+/* iPad landscape and wider: short but wide, so trade a little width for a
+   third column and the whole stack fits without scrolling. */
+@media (min-width:1000px) {
+  .tray { width:250px; }
+  .parts { grid-template-columns:repeat(3, 1fr); }
+}
 
 /* --------------------------------------------------------------- garage */
 .garage { overflow:hidden; }
@@ -175,12 +187,20 @@ canvas { display:block; image-rendering:pixelated; }
   .meter em { display:none; }
   .meter i { height:7px; }
 
-  .toolbar { padding:7px 8px; gap:6px; }
-  .tab { padding:6px 9px; gap:4px; }
-  .tab span { display:none; }          /* icon alone at phone width */
-  .tab b { font-size:19px; }
-  .parts { padding:6px 8px 10px; gap:6px; }
-  .part { width:62px; }
+  /* The toolbar now shares its width with the parts tray, so it has 291px
+     instead of the whole screen; at full size it needed 311 and pushed the page
+     sideways. Slightly narrower buttons, still comfortably thumb-sized. */
+  .toolbar { padding:7px 6px; gap:4px; }
+  .toolbar .tools { gap:4px; }
+  .toolbar .btn.tool { padding:0 9px; min-width:40px; }
+  .toolbar .btn.icon { min-width:40px; width:40px; }
+  /* One column of parts on a phone: the build plate needs the width more
+     than the tray does, and a vertical stack scrolls easily with a thumb. */
+  .tray { width:84px; padding:2px 6px 12px; }
+  .trayhead { justify-content:center; padding:10px 0 5px; }
+  .trayhead span { display:none; }     /* icon alone at phone width */
+  .trayhead b { font-size:20px; }
+  .parts { grid-template-columns:1fr; gap:5px; }
   .part canvas { width:40px; height:40px; }
 }
 
@@ -283,7 +303,10 @@ canvas { display:block; image-rendering:pixelated; }
 .phead.p1 { color:#7fe3ff; } .phead.p1 i { background:#7fe3ff; }
 .phead.p2 { color:#ffd23e; } .phead.p2 i { background:#ffd23e; }
 .chosen { background:#0a0d14; border-radius:10px; padding:8px; margin-bottom:10px;
-          display:flex; flex-direction:column; align-items:center; }
+          display:flex; flex-direction:column; align-items:center;
+          width:100%; border:2px solid transparent; cursor:pointer;
+          font:inherit; color:inherit; }
+.chosen:hover, .chosen:focus-visible { border-color:var(--line); }
 .chosen .cname { font-weight:700; margin-top:6px; }
 .chosenActions { display:flex; gap:8px; margin:-4px 0 10px; }
 .chosenActions .btn { flex:1; min-height:38px; font-size:13px; }

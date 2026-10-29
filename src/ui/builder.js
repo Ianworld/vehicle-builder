@@ -25,7 +25,6 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
   let veh = V.clone(vehicle);
   let tool = 'build';
   let held = 'block';
-  let group = 'structure';
   let undoStack = [];
   let orphans = new Set();
   let painting = null;      // cells already touched during one drag
@@ -43,6 +42,9 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
         <button class="btn primary" data-act="save"><b class="ico">✅</b> Save</button>
       </header>
 
+      <div class="bbody">
+      <aside class="tray" id="traylist"></aside>
+      <div class="bmain">
       <div class="stage"><canvas id="grid"></canvas>
         <div class="warn" id="warn" hidden>Some parts aren't attached!</div>
       </div>
@@ -64,9 +66,7 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
         <button class="btn icon" data-act="zoomin">+</button>
       </div>
 
-      <div class="tray">
-        <div class="tabs" id="tabs"></div>
-        <div class="parts" id="traylist"></div>
+      </div>
       </div>
     </div>`;
 
@@ -78,36 +78,57 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
   $('#tools').innerHTML = TOOLS.map((t) =>
     `<button class="btn tool" data-tool="${t.id}"><b>${t.icon}</b><span>${t.label}</span></button>`).join('');
 
-  // Tray tabs
-  $('#tabs').innerHTML = GROUPS.map((g) =>
-    `<button class="tab" data-group="${g.id}"><b>${g.icon}</b><span>${g.label}</span></button>`).join('');
-
+  /**
+   * Every part, all the time, in one stack down the left with a heading per
+   * group. This used to be four tabs, which hid three quarters of the parts
+   * behind a choice the player had to know to make -- a wheel was simply not
+   * there until you found the "Go" tab. Now nothing is ever out of sight.
+   */
   function renderTray() {
     const list = $('#traylist');
     list.innerHTML = '';
-    for (const part of PARTS.filter((p) => p.group === group)) {
-      const b = document.createElement('button');
-      b.className = 'part' + (held === part.id ? ' sel' : '');
-      b.dataset.part = part.id;
-      // Thumbnails scale the sprite down to fit a uniform box so a 2x2 wheel
-      // and a 1x1 block read at comparable size in the tray.
-      const src = spriteCanvas(part.id, 0, 1);
-      const box = 46;
-      const s = Math.min(box / src.width, box / src.height);
-      const cv = document.createElement('canvas');
-      cv.width = box; cv.height = box;
-      const c = cv.getContext('2d');
-      c.imageSmoothingEnabled = false;
-      c.drawImage(src, (box - src.width * s) / 2, (box - src.height * s) / 2,
-        src.width * s, src.height * s);
-      b.appendChild(cv);
-      const cap = document.createElement('span');
-      cap.textContent = part.name;
-      b.appendChild(cap);
-      list.appendChild(b);
+    for (const g of GROUPS) {
+      const head = document.createElement('div');
+      head.className = 'trayhead';
+      head.innerHTML = `<b>${g.icon}</b><span></span>`;
+      head.querySelector('span').textContent = g.label;
+      list.appendChild(head);
+      const grid = document.createElement('div');
+      grid.className = 'parts';
+      for (const part of PARTS.filter((p) => p.group === g.id)) {
+        grid.appendChild(partButton(part));
+      }
+      list.appendChild(grid);
     }
-    mount.querySelectorAll('.tab').forEach((t) =>
-      t.classList.toggle('on', t.dataset.group === group));
+  }
+
+  function partButton(part) {
+    const b = document.createElement('button');
+    b.className = 'part' + (held === part.id ? ' sel' : '');
+    b.dataset.part = part.id;
+    // Thumbnails scale the sprite down to fit a uniform box so a 2x2 wheel
+    // and a 1x1 block read at comparable size in the tray.
+    const src = spriteCanvas(part.id, 0, 1);
+    const box = 46;
+    const s = Math.min(box / src.width, box / src.height);
+    const cv = document.createElement('canvas');
+    cv.width = box; cv.height = box;
+    const c = cv.getContext('2d');
+    c.imageSmoothingEnabled = false;
+    c.drawImage(src, (box - src.width * s) / 2, (box - src.height * s) / 2,
+      src.width * s, src.height * s);
+    b.appendChild(cv);
+    const cap = document.createElement('span');
+    cap.textContent = part.name;
+    b.appendChild(cap);
+    return b;
+  }
+
+  // Just move the highlight. Rebuilding the whole stack would throw away its
+  // scroll position, so picking a part near the bottom would jump to the top.
+  function markHeld() {
+    mount.querySelectorAll('.part').forEach((b) =>
+      b.classList.toggle('sel', b.dataset.part === held));
   }
 
   function renderTools() {
@@ -395,14 +416,11 @@ export function createBuilder({ mount, vehicle, onExit, onSave }) {
     const tb = e.target.closest('[data-tool]');
     if (tb) { tool = tb.dataset.tool; renderTools(); draw(); return; }
 
-    const tab = e.target.closest('[data-group]');
-    if (tab) { group = tab.dataset.group; renderTray(); return; }
-
     const pb = e.target.closest('[data-part]');
     if (pb) {
       held = pb.dataset.part;
       tool = 'build';               // picking a part always means "I want to build"
-      renderTools(); renderTray(); draw();
+      renderTools(); markHeld(); draw();
       return;
     }
 
